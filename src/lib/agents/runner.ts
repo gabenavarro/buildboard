@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 
 import { createAgentTask, finishAgentTask, updateItem, getAgentTask, getItem } from '../store.js';
-import type { AgentTask } from '../db.js';
+import { repoRoot, type AgentTask } from '../db.js';
 
 export interface ActiveTask {
 	id: string;
@@ -16,7 +16,7 @@ export interface ActiveTask {
 const active = new Map<string, ActiveTask>();
 
 export function agentDir(): string {
-	return process.env.BUILDBOARD_AGENT_DIR ?? process.cwd();
+	return process.env.BUILDBOARD_AGENT_DIR ?? repoRoot();
 }
 
 export function isActive(id: string): boolean {
@@ -103,8 +103,8 @@ export function startAgentTask(input: {
 	return task;
 }
 
-function finishTask(entry: ActiveTask, item_id: string | null, status: 'succeeded' | 'failed'): void {
-	finishAgentTask(entry.id, status, entry.transcript || null);
+function finishTask(entry: ActiveTask, item_id: string | null, status: 'succeeded' | 'failed' | 'canceled'): void {
+	finishAgentTask(entry.id, status, entry.transcript || entry.raw || null);
 	if (item_id && status === 'succeeded' && entry.transcript) {
 		writeBack(item_id, entry.transcript);
 	}
@@ -128,7 +128,7 @@ export function cancelAgentTask(id: string): boolean {
 	const entry = active.get(id);
 	if (!entry) return false;
 	entry.proc?.kill('SIGTERM');
-	finishTask(entry, getAgentTask(id)?.item_id ?? null, 'failed');
+	finishTask(entry, getAgentTask(id)?.item_id ?? null, 'canceled');
 	entry.emitter.emit('done', { status: 'canceled' });
 	return true;
 }
