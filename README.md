@@ -11,9 +11,9 @@ A whiteboard + decision database + subagent runner for planning build-outs toget
 
 Under active development. Milestones:
 
-- [ ] M0 — SQLite schema + board CRUD API
-- [ ] M1 — Board UI (node graph, persistence)
-- [ ] M2 — Threads, decisions, concepts + search + brief
+- [x] M0 — SQLite schema + board CRUD API
+- [x] M1 — Board UI (node graph, persistence)
+- [x] M2 — Threads, decisions, concepts + search + brief
 - [ ] M3 — Subagent runner (streaming, write-back)
 - [ ] M4 — MCP server + integration
 - [ ] M5 — Polish (minimap, export, tests)
@@ -47,6 +47,21 @@ The SQLite database lives at `data/buildboard.db` (override with `BUILDBOARD_DB`
 | GET | `/api/edges` | List edges |
 | POST | `/api/edges` | Create edge |
 | DELETE | `/api/edges/:id` | Delete edge |
+| GET | `/api/threads` | List threads (`?item_id=`) |
+| POST | `/api/threads` | Create thread |
+| DELETE | `/api/threads/:id` | Delete thread |
+| GET | `/api/threads/:id/messages` | List messages in a thread |
+| POST | `/api/threads/:id/messages` | Post a message |
+| GET | `/api/decisions` | List decisions (`?item_id=&status=`) |
+| POST | `/api/decisions` | Record a decision |
+| PATCH | `/api/decisions/:id` | Update/supersede a decision |
+| DELETE | `/api/decisions/:id` | Delete a decision |
+| GET | `/api/concepts` | List concepts |
+| POST | `/api/concepts` | Create a concept |
+| PATCH | `/api/concepts/:id` | Update a concept |
+| DELETE | `/api/concepts/:id` | Delete a concept |
+| GET | `/api/search` | Full-text search (`?q=&limit=&source=`) |
+| GET | `/api/brief` | Compact context digest (~200 tokens) |
 
 ## Scripts
 
