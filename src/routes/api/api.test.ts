@@ -158,6 +158,131 @@ describe('API error handling', () => {
 		expect((await patchBoard(event({ id: copyId }, jsonBody({ name: 'Fresh board' })))).status).toBe(409);
 	});
 
+	it('edge GET/PATCH round-trip, 404s, and 400 on an invalid kind', async () => {
+		const { createItem, createEdge } = await import('../../lib/store.js');
+		const { GET, PATCH } = await import('./edges/[id]/+server.js');
+		const a = createItem({ title: 'a' });
+		const b = createItem({ title: 'b' });
+		const edge = createEdge({ from_id: a.id, to_id: b.id });
+
+		const fetched = await GET(event({ id: edge.id }));
+		expect(fetched.status).toBe(200);
+		expect(((await fetched.json()) as { id: string }).id).toBe(edge.id);
+		expect((await GET(event({ id: 'missing' }))).status).toBe(404);
+
+		const patched = await PATCH(event({ id: edge.id }, jsonBody({ kind: 'blocks', label: 'stops it' })));
+		expect(patched.status).toBe(200);
+		const updated = (await patched.json()) as { kind: string; label: string };
+		expect(updated.kind).toBe('blocks');
+		expect(updated.label).toBe('stops it');
+
+		expect((await PATCH(event({ id: 'missing' }, jsonBody({ label: 'x' })))).status).toBe(404);
+		const bad = await PATCH(event({ id: edge.id }, jsonBody({ kind: '' })));
+		expect(bad.status).toBe(400);
+		expect(((await bad.json()) as { error: string }).error).toContain('invalid kind');
+		expect((await PATCH(event({ id: edge.id }, jsonBody({ to_id: 'missing' })))).status).toBe(404);
+	});
+
+	it('returns 409 when PATCHing an edge into the unique (from, to, kind) collision', async () => {
+		const { createItem, createEdge } = await import('../../lib/store.js');
+		const { PATCH } = await import('./edges/[id]/+server.js');
+		const a = createItem({ title: 'a' });
+		const b = createItem({ title: 'b' });
+		createEdge({ from_id: a.id, to_id: b.id });
+		const second = createEdge({ from_id: a.id, to_id: b.id, kind: 'relates_to' });
+
+		const res = await PATCH(event({ id: second.id }, jsonBody({ kind: 'depends_on' })));
+		expect(res.status).toBe(409);
+		expect(((await res.json()) as { error: string }).error).toBe('duplicate');
+	});
+
+	it('message DELETE removes from the thread list and from FTS search', async () => {
+		const { createThread } = await import('../../lib/store.js');
+		const { GET: getMessages, POST: postMessage } = await import('./threads/[id]/messages/+server.js');
+		const { DELETE: deleteMessageRoute } = await import('./threads/[id]/messages/[mid]/+server.js');
+		const { GET: searchRoute } = await import('./search/+server.js');
+		const thread = createThread('t');
+
+		const posted = await postMessage(
+			event({ id: thread.id }, jsonBody({ content: 'zebra crossing notes' }))
+		);
+		expect(posted.status).toBe(201);
+		const mid = ((await posted.json()) as { id: string }).id;
+
+		const before = await searchRoute(
+			event({}, undefined, new URL('http://localhost/api/search?q=zebra&source=message'))
+		);
+		expect(((await before.json()) as { hits: { id: string }[] }).hits.map((h) => h.id)).toContain(mid);
+
+		expect((await deleteMessageRoute(event({ id: 'missing', mid }))).status).toBe(404);
+		expect((await deleteMessageRoute(event({ id: thread.id, mid: 'missing' }))).status).toBe(404);
+
+		const deleted = await deleteMessageRoute(event({ id: thread.id, mid }));
+		expect(deleted.status).toBe(200);
+		expect(await deleted.json()).toEqual({ ok: true });
+
+		const listed = await getMessages(event({ id: thread.id }));
+		expect(listed.status).toBe(200);
+		expect(((await listed.json()) as { id: string }[]).map((m) => m.id)).not.toContain(mid);
+
+		const after = await searchRoute(
+			event({}, undefined, new URL('http://localhost/api/search?q=zebra&source=message'))
+		);
+		expect(((await after.json()) as { hits: { id: string }[] }).hits.map((h) => h.id)).not.toContain(mid);
+	});
+
+	it('paginates same-created_at messages by rowid (no skips or duplicates)', async () => {
+		const { getDb } = await import('../../lib/db.js');
+		const { createThread } = await import('../../lib/store.js');
+		const { GET } = await import('./threads/[id]/messages/+server.js');
+		const thread = createThread('t');
+		const db = getDb();
+		const sameTs = '2026-01-01T00:00:00.000Z';
+		const insert = (content: string): { id: string } => {
+			const id = `msg_${Math.random().toString(36).slice(2)}`;
+			db
+				.prepare('INSERT INTO messages (id, thread_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)')
+				.run(id, thread.id, 'user', content, sameTs);
+			return { id };
+		};
+		const a = insert('one');
+		const b = insert('two');
+		const c = insert('three');
+
+		const firstPage = await GET(
+			event({ id: thread.id }, undefined, new URL('http://localhost/api/threads/x/messages?limit=1'))
+		);
+		expect(((await firstPage.json()) as { id: string }[]).map((m) => m.id)).toEqual([c.id]);
+
+		// cursor on the newest message returns the earlier one — ties are not skipped
+		const secondPage = await GET(
+			event(
+				{ id: thread.id },
+				undefined,
+				new URL(`http://localhost/api/threads/x/messages?limit=1&before_id=${c.id}`)
+			)
+		);
+		expect(((await secondPage.json()) as { id: string }[]).map((m) => m.id)).toEqual([b.id]);
+
+		const thirdPage = await GET(
+			event(
+				{ id: thread.id },
+				undefined,
+				new URL(`http://localhost/api/threads/x/messages?limit=1&before_id=${b.id}`)
+			)
+		);
+		expect(((await thirdPage.json()) as { id: string }[]).map((m) => m.id)).toEqual([a.id]);
+
+		const fourthPage = await GET(
+			event(
+				{ id: thread.id },
+				undefined,
+				new URL(`http://localhost/api/threads/x/messages?limit=1&before_id=${a.id}`)
+			)
+		);
+		expect(((await fourthPage.json()) as unknown[])).toEqual([]);
+	});
+
 	it('maps raw sqlite constraint errors by message', async () => {
 		const { toErrorResponse } = await import('./_util.js');
 		const fk = toErrorResponse(new Error('FOREIGN KEY constraint failed'));

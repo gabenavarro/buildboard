@@ -25,8 +25,11 @@ export const api = {
 	deleteItem: (id: string) => request<{ ok: boolean }>(`/api/items/${id}`, { method: 'DELETE' }),
 
 	listEdges: () => request<Edge[]>('/api/edges'),
+	getEdge: (id: string) => request<Edge>(`/api/edges/${id}`),
 	createEdge: (input: { from_id: string; to_id: string; kind?: string; label?: string; board_id?: string }) =>
 		request<Edge>('/api/edges', { method: 'POST', body: JSON.stringify(input) }),
+	updateEdge: (id: string, patch: { kind?: string; label?: string; from_id?: string; to_id?: string }) =>
+		request<Edge>(`/api/edges/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 	deleteEdge: (id: string) => request<{ ok: boolean }>(`/api/edges/${id}`, { method: 'DELETE' }),
 
 	listThreads: (item_id?: string) =>
@@ -40,6 +43,8 @@ export const api = {
 			method: 'POST',
 			body: JSON.stringify({ content, role })
 		}),
+	deleteMessage: (thread_id: string, mid: string) =>
+		request<{ ok: boolean }>(`/api/threads/${thread_id}/messages/${mid}`, { method: 'DELETE' }),
 
 	listDecisions: (item_id?: string) =>
 		request<Decision[]>(`/api/decisions${item_id ? `?item_id=${item_id}` : ''}`),
