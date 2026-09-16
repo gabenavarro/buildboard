@@ -178,3 +178,11 @@ textarea:focus {
 	border-top: 1px solid var(--border);
 	margin: 12px 0;
 }
+
+/* board-switch fade (class toggled on the SvelteFlow root) */
+.svelte-flow {
+	transition: opacity 150ms ease;
+}
+.svelte-flow.faded {
+	opacity: 0.25;
+}

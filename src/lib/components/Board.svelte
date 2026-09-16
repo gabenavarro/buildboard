@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { SvelteFlow, Background, MiniMap, useSvelteFlow, type Node, type Edge, type Connection } from '@xyflow/svelte';
+	import { SvelteFlow, Background, MiniMap, Controls, useSvelteFlow, type Node, type Edge, type Connection } from '@xyflow/svelte';
 	import { setContext } from 'svelte';
 
 	import ItemNode from '$lib/components/ItemNode.svelte';
@@ -28,12 +28,19 @@
 	let selectedNodes = $state<BoardNode[]>([]);
 	let selectedEdges = $state<Edge[]>([]);
 	let loaded = $state(false);
+	let switching = $state(false);
 	let justCreatedId = $state<string | null>(null);
 	let boardRef = $state<HTMLElement | null>(null);
 
 	const nodeTypes = { item: ItemNode };
 
-	const { screenToFlowPosition, fitView, setZoom, setCenter } = useSvelteFlow();
+	const { screenToFlowPosition, fitView, setZoom, setCenter, getZoom } = useSvelteFlow();
+
+	let zoomPct = $state(100);
+
+	function syncZoom() {
+		zoomPct = Math.round(getZoom() * 100);
+	}
 
 	setContext('board:statuschange', (item: Item) => handleUpdated(item));
 
@@ -41,8 +48,10 @@
 		return boardRef?.querySelector('.svelte-flow') ?? null;
 	}
 
-	async function load() {
+	async function load(isFirst: boolean) {
+		const isSwitch = !isFirst;
 		loaded = false;
+		if (isSwitch) switching = true;
 		selected = null;
 		selectedNodes = [];
 		selectedEdges = [];
@@ -67,12 +76,22 @@
 			console.error(e);
 		}
 		loaded = true;
+		if (isSwitch) {
+			await fitView({ duration: 300 }).catch(() => false);
+			switching = false;
+		}
+		requestAnimationFrame(syncZoom);
 	}
+
+	let firstLoad = true;
 
 	$effect(() => {
 		// Runs on mount and again whenever the active board changes.
+		// firstLoad is a plain (untracked) variable so the effect never
+		// depends on the loaded state - load() writes it.
 		void boardId;
-		void load();
+		void load(firstLoad);
+		firstLoad = false;
 	});
 
 	// Center + select a node the parent asked us to focus (e.g. from search).
@@ -256,8 +275,8 @@
 
 <div class="wrap">
 	<div class="board" bind:this={boardRef}>
-		{#if loaded}
-			<SvelteFlow
+		<SvelteFlow
+				class="canvas{switching ? ' faded' : ''}"
 				{nodes}
 				{edges}
 				{nodeTypes}
@@ -267,13 +286,20 @@
 				ondelete={handleDelete}
 				onselectionchange={handleSelectionChange}
 				onpaneclick={handlePaneClick}
+				onmoveend={syncZoom}
 			>
 				<Background />
 				<MiniMap />
-			</SvelteFlow>
-		{:else}
+				<Controls position="bottom-left" showZoom showFitView />
+		</SvelteFlow>
+
+		{#if !loaded}
 			<div class="loading">loading board…</div>
 		{/if}
+
+		<div class="zoomreadout" title="Zoom level (0 for 100%, f to fit)">
+			{zoomPct}%
+		</div>
 
 		{#if loaded && nodes.length === 0}
 			<div class="hint">Double-click anywhere to add a note</div>

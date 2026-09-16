@@ -2,7 +2,7 @@
 // Boots vite dev on a temp port with a throwaway DB, creates items via the
 // API, and asserts the canvas actually renders them. Exits non-zero on failure.
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -11,6 +11,13 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 4321;
 const BASE = `http://localhost:${PORT}`;
+
+// Overall watchdog: never hang silently.
+const watchdog = setTimeout(() => {
+  console.error('FAIL: e2e watchdog timeout (120s)');
+  process.exit(2);
+}, 120000);
+watchdog.unref?.();
 
 const dbDir = mkdtempSync(path.join(tmpdir(), 'buildboard-e2e-'));
 const dbFile = path.join(dbDir, 'e2e.db');
@@ -67,11 +74,15 @@ try {
   const pageErrors = [];
   page.on('pageerror', (e) => pageErrors.push(String(e)));
 
-  await page.goto(BASE, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(1000);
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.svelte-flow', { timeout: 10000 });
+  await page.waitForTimeout(800);
 
   check('no page errors', pageErrors.length === 0, pageErrors[0]?.slice(0, 160));
   check('svelte-flow container rendered', await page.locator('.svelte-flow').count() === 1);
+  await page
+    .waitForFunction(() => document.querySelectorAll('.svelte-flow__node .card').length === 3, null, { timeout: 15000 })
+    .catch(() => {});
   const cards = page.locator('.svelte-flow__node .card');
   check('3 node cards rendered', (await cards.count()) === 3, `got ${await cards.count()}`);
   for (const t of ['E2E Alpha', 'E2E Beta', 'E2E Gamma']) {
@@ -94,14 +105,53 @@ try {
   check('results closed after selection', (await page.locator('.results').count()) === 0);
   check('detail panel focused the hit', await page.locator('.panel .title, [class*=panel] .title').first().textContent().then((t) => t?.includes('E2E Beta')).catch(() => false) === true || (await page.locator('text=E2E Beta').count()) > 0);
 
+  // Canvas chrome: zoom controls + readout
+  check('zoom controls rendered', (await page.locator('.svelte-flow__controls').count()) === 1);
+  check('zoom readout rendered', (await page.locator('.zoomreadout').count()) === 1);
+
+  // Board switch: canvas stays mounted, new board's items render
+  const before = await page.locator('.svelte-flow').count();
+  await (await fetch(BASE + '/api/boards', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'E2E Board Two' })
+  })).json();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.svelte-flow', { timeout: 10000 });
+  await page.locator('select').first().selectOption({ label: 'E2E Board Two (0)' });
+  await page.waitForTimeout(900);
+  check('canvas not remounted on switch', (await page.locator('.svelte-flow').count()) === before);
+  check('empty hint on empty board', (await page.locator('.hint').count()) === 1);
+  check('no cards on empty board', (await page.locator('.svelte-flow__node .card').count()) === 0);
+  await page.locator('select').first().selectOption({ index: 0 });
+  await page.waitForTimeout(900);
+  await page
+    .waitForFunction(() => document.querySelectorAll('.svelte-flow__node .card').length === 3, null, { timeout: 15000 })
+    .catch(() => {});
+  check('original nodes back after switch', (await page.locator('.svelte-flow__node .card').count()) === 3);
 
 
+
+  clearTimeout(watchdog);
   if (process.exitCode === 0) console.log('\nE2E PASS');
 } catch (e) {
   console.error(`FAIL: ${e.message}`);
   process.exitCode = 1;
 } finally {
   if (browser) await browser.close().catch(() => {});
-  if (child) child.kill('SIGTERM');
+  if (child) {
+		const killGroup = (sig) => {
+			try {
+				process.kill(-child.pid, sig);
+			} catch {
+				try {
+					child.kill(sig);
+				} catch {}
+			}
+		};
+		killGroup('SIGTERM');
+		setTimeout(() => killGroup('SIGKILL'), 2000).unref();
+	}
+  clearTimeout(watchdog);
   rmSync(dbDir, { recursive: true, force: true });
 }
