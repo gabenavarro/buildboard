@@ -9,8 +9,10 @@ import {
 	createItem,
 	updateItem,
 	moveItem,
+	duplicateItem,
 	deleteItem,
 	createEdge,
+	listEdges,
 	updateEdge,
 	deleteEdge,
 	createDecision,
@@ -25,16 +27,21 @@ import {
 	listConcepts,
 	getConcept,
 	getConceptForItem,
+	createConcept,
+	updateConcept,
+	deleteConcept,
 	listBoards,
 	getBoard,
 	createBoard,
+	renameBoard,
 	deleteBoard,
 	listAgentTasks,
-	getAgentTask
+	getAgentTask,
+	StoreError
 } from '../lib/store.js';
 import { search } from '../lib/search.js';
 import { buildBrief } from '../lib/digest.js';
-import { startAgentTask } from '../lib/agents/runner.js';
+import { startAgentTask, cancelAgentTask } from '../lib/agents/runner.js';
 import { buildPrompt } from '../lib/agents/prompt.js';
 
 // Resolve the package version at runtime. In dev this file is src/mcp/server.ts
@@ -66,8 +73,19 @@ function fail(message: string) {
 	return { content: [{ type: 'text' as const, text: `error: ${message}` }], isError: true };
 }
 
-function isUniqueViolation(e: unknown): boolean {
-	return e instanceof Error && /UNIQUE constraint failed/i.test(e.message);
+/**
+ * One place for tool error mapping: StoreError (the store's typed
+ * HTTP-ish errors) and SQLite UNIQUE violations become friendly tool
+ * errors; anything else is a real bug and is rethrown.
+ */
+function run<T>(fn: () => T) {
+	try {
+		return text(fn());
+	} catch (e) {
+		if (e instanceof StoreError) return fail(e.message);
+		if (e instanceof Error && /UNIQUE constraint failed/i.test(e.message)) return fail('duplicate: unique constraint violated');
+		throw e;
+	}
 }
 
 server.registerTool(
@@ -201,6 +219,25 @@ server.registerTool(
 );
 
 server.registerTool(
+	'bb_item_duplicate',
+	{
+		title: 'Duplicate an item',
+		description:
+			'Copy a board item (same kind/title/body/position) onto the same board, or to another board. Returns the new item.',
+		inputSchema: {
+			item_id: z.string(),
+			board_id: z.string().optional().describe('Target board (default: the source item\'s board)'),
+			title_suffix: z.string().optional().describe('Appended to the copy\'s title, e.g. " (copy)"')
+		}
+	},
+	({ item_id, board_id, title_suffix }) => {
+		if (!getItem(item_id)) return fail(`no item with id ${item_id}`);
+		if (board_id && !getBoard(board_id)) return fail(`unknown board: ${board_id}`);
+		return run(() => duplicateItem(item_id, { board_id, title_suffix }));
+	}
+);
+
+server.registerTool(
 	'bb_edge_add',
 	{
 		title: 'Connect two items',
@@ -215,13 +252,18 @@ server.registerTool(
 		({ from_id, to_id, kind, label }) => {
 		if (!getItem(from_id)) return fail(`no item with id ${from_id}`);
 		if (!getItem(to_id)) return fail(`no item with id ${to_id}`);
-		try {
-			return text(createEdge({ from_id, to_id, kind, label }));
-		} catch (e) {
-			if (isUniqueViolation(e)) return fail('edge already exists');
-			throw e;
-		}
+		return run(() => createEdge({ from_id, to_id, kind, label }));
 	}
+);
+
+server.registerTool(
+	'bb_edge_list',
+	{
+		title: 'List edges',
+		description: 'List board edges (relationships), optionally restricted to one board.',
+		inputSchema: { board: z.string().optional().describe('Only edges on this board') }
+	},
+	({ board }) => text(listEdges(board))
 );
 
 server.registerTool(
@@ -270,12 +312,7 @@ server.registerTool(
 	},
 	({ item_id, question, options, choice, rationale }) => {
 		if (item_id && !getItem(item_id)) return fail(`no item with id ${item_id}`);
-		try {
-			return text(createDecision({ item_id, question, options, choice, rationale }));
-		} catch (e) {
-			if (isUniqueViolation(e)) return fail('decision already exists');
-			throw e;
-		}
+		return run(() => createDecision({ item_id, question, options, choice, rationale }));
 	}
 );
 
@@ -357,6 +394,63 @@ server.registerTool(
 );
 
 server.registerTool(
+	'bb_concept_add',
+	{
+		title: 'Create a concept',
+		description:
+			'Create a concept card (name, definition, optional details/source) optionally attached to a board item.',
+		inputSchema: {
+			name: z.string(),
+			definition: z.string().optional(),
+			details_md: z.string().optional(),
+			source: z.string().optional(),
+			item_id: z.string().optional().describe('Attach to this board item')
+		}
+	},
+	({ name, definition, details_md, source, item_id }) => {
+		if (item_id && !getItem(item_id)) return fail(`no item with id ${item_id}`);
+		return run(() => createConcept({ name, definition, details_md, source, item_id }));
+	}
+);
+
+server.registerTool(
+	'bb_concept_update',
+	{
+		title: 'Update a concept',
+		description: 'Update a concept card\'s name, definition, details, or source. Only the provided fields change.',
+		inputSchema: {
+			concept_id: z.string(),
+			name: z.string().optional(),
+			definition: z.string().optional(),
+			details_md: z.string().optional(),
+			source: z.string().optional()
+		}
+	},
+	({ concept_id, name, definition, details_md, source }) => {
+		const patch: Record<string, unknown> = {};
+		if (name !== undefined) patch.name = name;
+		if (definition !== undefined) patch.definition = definition;
+		if (details_md !== undefined) patch.details_md = details_md;
+		if (source !== undefined) patch.source = source;
+		const updated = getConcept(concept_id) ? run(() => updateConcept(concept_id, patch)) : fail(`no concept with id ${concept_id}`);
+		return updated;
+	}
+);
+
+server.registerTool(
+	'bb_concept_delete',
+	{
+		title: 'Delete a concept',
+		description: 'Delete a concept card.',
+		inputSchema: { concept_id: z.string() }
+	},
+	({ concept_id }) => {
+		const deleted = deleteConcept(concept_id);
+		return deleted ? text({ deleted: concept_id }) : fail(`no concept with id ${concept_id}`);
+	}
+);
+
+server.registerTool(
 	'bb_board_list',
 	{
 		title: 'List boards',
@@ -373,13 +467,20 @@ server.registerTool(
 		description: 'Create a new board with a unique name.',
 		inputSchema: { name: z.string() }
 	},
-	({ name }) => {
-		try {
-			return text(createBoard(name));
-		} catch (e) {
-			if (e instanceof Error && /board name already exists/.test(e.message)) return fail(e.message);
-			throw e;
-		}
+	({ name }) => run(() => createBoard(name))
+);
+
+server.registerTool(
+	'bb_board_rename',
+	{
+		title: 'Rename a board',
+		description: 'Rename a board. The name must be unique.',
+		inputSchema: { board_id: z.string(), name: z.string() }
+	},
+	({ board_id, name }) => {
+		if (!getBoard(board_id)) return fail(`no board with id ${board_id}`);
+		const board = renameBoard(board_id, name);
+		return board ? text(board) : fail(`cannot rename board ${board_id} (invalid or duplicate name)`);
 	}
 );
 
@@ -425,6 +526,21 @@ server.registerTool(
 		}
 	},
 	({ item_id, status, limit }) => text(listAgentTasks(limit ?? 50, { item_id, status }))
+);
+
+server.registerTool(
+	'bb_cancel_agent',
+	{
+		title: 'Cancel a running agent task',
+		description:
+			'Cancel a running agent task (SIGTERM, escalating to SIGKILL). The task is marked canceled; the item is unblocked for a new spawn.',
+		inputSchema: { task_id: z.string() }
+	},
+	({ task_id }) => {
+		if (!getAgentTask(task_id)) return fail(`no agent task with id ${task_id}`);
+		const canceled = cancelAgentTask(task_id);
+		return canceled ? text({ canceled: task_id }) : fail(`agent task ${task_id} is not running`);
+	}
 );
 
 server.registerTool(
