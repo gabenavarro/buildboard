@@ -1,4 +1,4 @@
-import type { Item, Edge, ItemKind, ItemStatus, Thread, Message, Decision, Concept, AgentTask } from './db.js';
+import type { Item, Edge, ItemKind, ItemStatus, Thread, Message, Decision, Concept, AgentTask, Board } from './db.js';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	const res = await fetch(path, {
@@ -25,7 +25,7 @@ export const api = {
 	deleteItem: (id: string) => request<{ ok: boolean }>(`/api/items/${id}`, { method: 'DELETE' }),
 
 	listEdges: () => request<Edge[]>('/api/edges'),
-	createEdge: (input: { from_id: string; to_id: string; kind?: string; label?: string }) =>
+	createEdge: (input: { from_id: string; to_id: string; kind?: string; label?: string; board_id?: string }) =>
 		request<Edge>('/api/edges', { method: 'POST', body: JSON.stringify(input) }),
 	deleteEdge: (id: string) => request<{ ok: boolean }>(`/api/edges/${id}`, { method: 'DELETE' }),
 
@@ -76,7 +76,14 @@ export const api = {
 		instruction?: string;
 	}) =>
 		request<AgentTask>('/api/agent-tasks', { method: 'POST', body: JSON.stringify(input) }),
-	cancelAgentTask: (id: string) => request<{ ok: boolean }>(`/api/agent-tasks/${id}`, { method: 'POST' })
+	cancelAgentTask: (id: string) => request<{ ok: boolean }>(`/api/agent-tasks/${id}`, { method: 'POST' }),
+
+	listBoards: () => request<Board[]>('/api/boards'),
+	createBoard: (name: string) =>
+		request<Board>('/api/boards', { method: 'POST', body: JSON.stringify({ name }) }),
+	renameBoard: (id: string, name: string) =>
+		request<Board>(`/api/boards/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+	deleteBoard: (id: string) => request<{ ok: boolean }>(`/api/boards/${id}`, { method: 'DELETE' })
 };
 
-export type { Item, Edge, ItemKind, ItemStatus, Thread, Message, Decision, Concept, AgentTask };
+export type { Item, Edge, ItemKind, ItemStatus, Thread, Message, Decision, Concept, AgentTask, Board };

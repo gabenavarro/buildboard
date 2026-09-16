@@ -7,13 +7,16 @@ export const GET: RequestHandler = async ({ url }) => {
 		kind: url.searchParams.get('kind') ?? undefined,
 		tag: url.searchParams.get('tag') ?? undefined,
 		status: url.searchParams.get('status') ?? undefined,
-		parent_id: url.searchParams.get('parent_id') ?? undefined
+		parent_id: url.searchParams.get('parent_id') ?? undefined,
+		board_id: url.searchParams.get('board') ?? undefined
 	});
 	return json(items);
 };
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, url }) => {
 	const body = await readJson(request);
+	const board = url.searchParams.get('board');
+	if (board) body.board_id = board;
 	const validated = validateCreateItem(body);
 	if (!validated.ok) return badRequest(validated.error);
 	const item = createItem(validated.value);

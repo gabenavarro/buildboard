@@ -16,7 +16,7 @@ Under active development. Milestones:
 - [x] M2 — Threads, decisions, concepts + search + brief
 - [x] M3 — Subagent runner (streaming, write-back)
 - [x] M4 — MCP server + integration
-- [ ] M5 — Polish (minimap, export, tests)
+- [x] M5 — Polish (minimap, export, multi-board, tests)
 
 ## Developing
 
@@ -36,9 +36,15 @@ The SQLite database lives at `data/buildboard.db` (override with `BUILDBOARD_DB`
 
 ## API (v1)
 
+Item/edge endpoints accept `?board=<id>` to scope to a board (default `default`).
+
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/api/health` | Health check + table inventory |
+| GET | `/api/boards` | List boards |
+| POST | `/api/boards` | Create a board |
+| PATCH | `/api/boards/:id` | Rename a board |
+| DELETE | `/api/boards/:id` | Delete an empty board |
 | GET | `/api/items` | List items (`?kind=&tag=&status=&parent_id=`) |
 | POST | `/api/items` | Create item |
 | GET | `/api/items/:id` | Get one item |
@@ -71,6 +77,17 @@ The SQLite database lives at `data/buildboard.db` (override with `BUILDBOARD_DB`
 The subagent runner shells out to `opencode run --format json --agent <agent> --dir <dir>`.
 The working directory defaults to the app's CWD; override with `BUILDBOARD_AGENT_DIR`.
 Permissions are never auto-approved — a running subagent behaves like an ordinary opencode agent.
+
+## Usage
+
+- **New item** — top-left palette picks the node kind; the node is created at the cursor.
+- **Select** — click a node to open the side panel (Item / Thread / Decisions / Concept / Agent tabs). Click the canvas to deselect.
+- **Reposition** — drag a node; the position is persisted on release.
+- **Connect** — drag from a node's edge handle to another node.
+- **Delete** — select a node or edge and press `Delete`/`Backspace`.
+- **Minimap** — bottom-right corner of the canvas.
+- **Export** — the "Export .md" button downloads the current board as markdown.
+- **Boards** — the top-bar switcher lists boards; `＋` creates one, `✕` deletes an empty one.
 
 ## MCP server
 

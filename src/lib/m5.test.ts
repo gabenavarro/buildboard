@@ -1,0 +1,60 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const tmpRoot = mkdtempSync(path.join(tmpdir(), 'buildboard-m5-'));
+let dbFile: string;
+
+beforeEach(() => {
+	dbFile = path.join(tmpRoot, `test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+	process.env.BUILDBOARD_DB = dbFile;
+	vi.resetModules();
+});
+
+afterEach(() => {
+	delete process.env.BUILDBOARD_DB;
+});
+
+describe('boards', () => {
+	it('has a default board and supports create/rename/delete', async () => {
+		const { listBoards, createBoard, renameBoard, deleteBoard, getBoard } = await import('../lib/store.js');
+
+		const initial = listBoards();
+		expect(initial.some((b) => b.id === 'default' && b.name === 'Main board')).toBe(true);
+
+		const b = createBoard('Roadmap');
+		expect(getBoard(b.id)?.name).toBe('Roadmap');
+
+		const renamed = renameBoard(b.id, 'Roadmap v2');
+		expect(renamed?.name).toBe('Roadmap v2');
+
+		expect(deleteBoard(b.id)).toBe(true);
+		expect(getBoard(b.id)).toBeNull();
+	});
+
+	it('refuses to delete the default board or a board with items', async () => {
+		const { createBoard, deleteBoard, createItem } = await import('../lib/store.js');
+		const b = createBoard('full');
+		createItem({ title: 'x', board_id: b.id });
+		expect(deleteBoard(b.id)).toBe(false);
+		expect(deleteBoard('default')).toBe(false);
+	});
+
+	it('scopes items and edges by board', async () => {
+		const { createItem, createEdge, listItems, listEdges } = await import('../lib/store.js');
+		const b = (await import('../lib/store.js')).createBoard('scoped');
+
+		const a = createItem({ title: 'a', board_id: b.id });
+		const c = createItem({ title: 'c' }); // default board
+		createEdge({ from_id: a.id, to_id: a.id, board_id: b.id });
+		createEdge({ from_id: c.id, to_id: c.id });
+
+		expect(listItems({ board_id: b.id })).toHaveLength(1);
+		expect(listItems({ board_id: 'default' })).toHaveLength(1);
+		expect(listItems()).toHaveLength(2);
+
+		expect(listEdges(b.id)).toHaveLength(1);
+		expect(listEdges('default')).toHaveLength(1);
+	});
+});
