@@ -7,6 +7,7 @@ import {
 	updateItem,
 	getRunningAgentTaskForItem,
 	getItem,
+	reconcileStaleAgentTasks,
 	StoreError
 } from '../store.js';
 import { repoRoot, type AgentTask } from '../db.js';
@@ -26,6 +27,11 @@ export interface ActiveTask {
 }
 
 const active = new Map<string, ActiveTask>();
+
+// At module load the in-memory table is empty by definition, so any 'running'
+// row in the DB is an orphan from a previous process. Reconcile it so the
+// per-item 409 guard cannot wedge an item forever after a restart.
+reconcileStaleAgentTasks();
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 // Read at module load; tests re-import the module (vi.resetModules) with a

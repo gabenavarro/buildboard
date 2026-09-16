@@ -718,6 +718,27 @@ export function finishAgentTask(id: string, status: AgentTaskStatus, transcript?
 	).run(status, transcript ?? null, id);
 }
 
+/**
+ * Mark every 'running' agent task as failed. Called at runner module load
+ * (== server startup): the in-memory process table is always empty then, so
+ * any 'running' row is an orphan from a previous process — left alone it would
+ * wedge the item behind the per-item 409 guard forever.
+ * Returns the number of rows reconciled.
+ */
+export function reconcileStaleAgentTasks(): number {
+	const db = getDb();
+	const res = db
+		.prepare(
+			`UPDATE agent_tasks
+			 SET status = 'failed',
+			     transcript = COALESCE(transcript, '') || ?,
+			     finished_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+			 WHERE status = 'running'
+		`)
+		.run('\n\n[server restarted; task was interrupted]');
+	return Number(res.changes);
+}
+
 // ---------- boards ----------
 
 export function listBoards(): BoardWithCount[] {
