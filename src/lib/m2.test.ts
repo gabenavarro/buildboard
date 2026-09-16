@@ -1,19 +1,16 @@
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-const tmpRoot = mkdtempSync(path.join(tmpdir(), 'buildboard-m2-'));
-let dbFile: string;
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cleanupDb, cleanupTempDirs, freshDb } from '../test/testdb.js';
 
 beforeEach(() => {
-	dbFile = path.join(tmpRoot, `test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
-	process.env.BUILDBOARD_DB = dbFile;
-	vi.resetModules();
+	freshDb();
 });
 
 afterEach(() => {
-	delete process.env.BUILDBOARD_DB;
+	cleanupDb();
+});
+
+afterAll(() => {
+	cleanupTempDirs();
 });
 
 describe('threads & messages', () => {

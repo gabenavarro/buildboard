@@ -28,7 +28,9 @@ export interface ActiveTask {
 const active = new Map<string, ActiveTask>();
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
-const KILL_ESCALATION_MS = 5000;
+// Read at module load; tests re-import the module (vi.resetModules) with a
+// small override so the escalation window is testable without wall-clock races.
+const KILL_ESCALATION_MS = Number(process.env.BUILDBOARD_AGENT_KILL_MS) || 5000;
 
 function agentTimeoutMs(): number {
 	const raw = process.env.BUILDBOARD_AGENT_TIMEOUT_MS;
@@ -168,8 +170,8 @@ export function startAgentTask(input: {
 }
 
 /**
- * Send SIGTERM to the child's whole process group, then SIGKILL after ~5s
- * if any member is still alive. Both cancel and timeout go through here;
+ * Send SIGTERM to the child's whole process group, then SIGKILL after the
+ * escalation delay (default ~5s) if any member is still alive. Both cancel and timeout go through here;
  * the `exited` flag (set from the child's exit event) plus a group-liveness
  * probe prevent signaling an already-dead process.
  */

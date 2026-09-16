@@ -1,22 +1,20 @@
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { RequestHandler } from '@sveltejs/kit';
-
-const tmpRoot = mkdtempSync(path.join(tmpdir(), 'buildboard-runner-test-'));
-let dbFile: string;
+import { cleanupDb, cleanupTempDirs, freshDb } from '../test/testdb.js';
 
 beforeEach(() => {
-	dbFile = path.join(tmpRoot, `test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
-	process.env.BUILDBOARD_DB = dbFile;
-	vi.resetModules();
+	freshDb();
 });
 
 afterEach(() => {
-	delete process.env.BUILDBOARD_DB;
+	cleanupDb();
 	delete process.env.BUILDBOARD_AGENT_CMD;
 	delete process.env.BUILDBOARD_AGENT_TIMEOUT_MS;
+	delete process.env.BUILDBOARD_AGENT_KILL_MS;
+});
+
+afterAll(() => {
+	cleanupTempDirs();
 });
 
 async function waitFor(pred: () => boolean, timeoutMs = 10000, label = 'condition'): Promise<void> {
@@ -99,6 +97,8 @@ describe('agent runner hardening', () => {
 		// The long-lived process itself traps SIGTERM (a bare `sleep 30` under
 		// `trap "" TERM` would die, because its child sleep does not trap).
 		process.env.BUILDBOARD_AGENT_CMD = "bash -c 'trap \"\" TERM; while :; do sleep 1; done'";
+		// Fast escalation so the test does not race a 5s wall-clock timer.
+		process.env.BUILDBOARD_AGENT_KILL_MS = '500';
 		const { startAgentTask, cancelAgentTask, getActive } = await import('./agents/runner.js');
 		const { getAgentTask } = await import('./store.js');
 
@@ -109,21 +109,26 @@ describe('agent runner hardening', () => {
 		// so the escalation path is what we are measuring.
 		await new Promise((r) => setTimeout(r, 500));
 
+		const groupAlive = (): boolean => {
+			try {
+				process.kill(-entry.proc!.pid!, 0);
+				return true;
+			} catch {
+				return false;
+			}
+		};
 		const t0 = Date.now();
 		expect(cancelAgentTask(task.id)).toBe(true);
-		// 'close' fires only once the whole process group (including the
-		// SIGTERM-trapping bash) has released the pipes — i.e. after SIGKILL.
-		await new Promise<void>((resolve, reject) => {
-			entry.proc!.once('close', () => resolve());
-			setTimeout(() => reject(new Error('child group did not die')), 12000).unref();
-		});
+		// SIGTERM is ignored, so the group can only die via the escalation
+		// SIGKILL. Poll for exit with margin instead of a fixed wall-clock band.
+		await waitFor(() => !groupAlive(), 6000, 'process group to die');
 		const elapsed = Date.now() - t0;
 
-		// SIGTERM was ignored, so the child should have died ~5s later via SIGKILL.
-		expect(elapsed).toBeGreaterThanOrEqual(4000);
-		expect(elapsed).toBeLessThan(9000);
+		// Death must come after the 500ms escalation delay, well inside the 6s window.
+		expect(elapsed).toBeGreaterThanOrEqual(400);
+		expect(elapsed).toBeLessThan(6500);
 		expect(getAgentTask(task.id)!.status).toBe('canceled');
-	}, 20000);
+	}, 15000);
 
 	it('refuses a second task for an item with a running task (409, no dangling row)', async () => {
 		process.env.BUILDBOARD_AGENT_CMD = 'sleep 30';
