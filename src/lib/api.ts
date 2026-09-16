@@ -23,6 +23,21 @@ export const api = {
 	updateItem: (id: string, patch: Partial<Item>) =>
 		request<Item>(`/api/items/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 	deleteItem: (id: string) => request<{ ok: boolean }>(`/api/items/${id}`, { method: 'DELETE' }),
+	moveItem: (id: string, board_id: string) =>
+		request<Item>(`/api/items/${id}/move`, { method: 'POST', body: JSON.stringify({ board_id }) }),
+	duplicateItem: (id: string, opts?: { board_id?: string; title_suffix?: string }) =>
+		request<Item>(`/api/items/${id}/duplicate`, {
+			method: 'POST',
+			body: JSON.stringify(opts ?? {})
+		}),
+
+	getBrief: (board?: string, tokens?: number) => {
+		const params = new URLSearchParams();
+		if (board) params.set('board', board);
+		if (tokens !== undefined) params.set('tokens', String(tokens));
+		const qs = params.toString() ? `?${params.toString()}` : '';
+		return request<{ brief: string; chars: number; approx_tokens: number }>(`/api/brief${qs}`);
+	},
 
 	listEdges: () => request<Edge[]>('/api/edges'),
 	getEdge: (id: string) => request<Edge>(`/api/edges/${id}`),

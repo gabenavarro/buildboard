@@ -217,6 +217,70 @@ export function updateItem(id: string, patch: Record<string, unknown>): Item | n
 }
 
 /**
+ * Move an item to another board. Unknown target board throws StoreError 404;
+ * unknown item returns null. Edges follow the moved item when the other
+ * endpoint is already on the target board (intra-board edges stay intra-board);
+ * edges whose other endpoint lives on a different board keep their original
+ * board_id — they become effectively cross-board and are shown on neither
+ * board's canvas.
+ */
+export function moveItem(id: string, board_id: string): Item | null {
+	const db = getDb();
+	if (!getBoard(board_id)) throw new StoreError(404, `board not found: ${board_id}`);
+	const item = getItem(id);
+	if (!item) return null;
+
+	db.prepare(`UPDATE items SET board_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(
+		board_id,
+		id
+	);
+	db.prepare(
+		`UPDATE edges SET board_id = ?
+		 WHERE (from_id = ? AND to_id IN (SELECT id FROM items WHERE board_id = ?))
+		    OR (to_id = ? AND from_id IN (SELECT id FROM items WHERE board_id = ?))`
+	).run(board_id, id, board_id, id, board_id);
+
+	return getItem(id);
+}
+
+/**
+ * Duplicate an item. Copies kind, status, tags, and body_md; new id; x/y
+ * offset by 30 so the clone does not sit on the original. `board_id`
+ * defaults to the source board (unknown board throws StoreError 404);
+ * `title_suffix` is appended to the title when given. Returns the new item,
+ * or null for an unknown source.
+ */
+export function duplicateItem(
+	id: string,
+	opts: { board_id?: string; title_suffix?: string } = {}
+): Item | null {
+	const db = getDb();
+	const source = getItem(id);
+	if (!source) return null;
+	const board_id = opts.board_id ?? source.board_id;
+	if (!getBoard(board_id)) throw new StoreError(404, `board not found: ${board_id}`);
+	const copyId = newId();
+	db.prepare(
+		`INSERT INTO items (id, kind, title, body_md, x, y, w, h, status, tags, parent_id, board_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	).run(
+		copyId,
+		source.kind,
+		opts.title_suffix ? `${source.title}${opts.title_suffix}` : source.title,
+		source.body_md,
+		source.x + 30,
+		source.y + 30,
+		source.w,
+		source.h,
+		source.status,
+		JSON.stringify(source.tags),
+		source.parent_id,
+		board_id
+	);
+	return getItem(copyId);
+}
+
+/**
  * Delete an item and everything lifecycle-tied to it, in one transaction:
  * threads (messages follow via their FK ON DELETE CASCADE), decisions, and
  * agent tasks are removed; edges follow via their FK ON DELETE CASCADE.

@@ -283,6 +283,75 @@ describe('API error handling', () => {
 		expect(((await fourthPage.json()) as unknown[])).toEqual([]);
 	});
 
+	it('POST move: 200 with the moved item, 404 unknown item/board, 400 missing board_id', async () => {
+		const { createItem, createBoard, createEdge, getEdge } = await import('../../lib/store.js');
+		const { POST } = await import('./items/[id]/move/+server.js');
+
+		const board = createBoard('Elsewhere');
+		const a = createItem({ title: 'a' });
+		const b = createItem({ title: 'b', board_id: board.id });
+		const edge = createEdge({ from_id: a.id, to_id: b.id });
+
+		const missing = await POST(event({ id: a.id }, jsonBody({})));
+		expect(missing.status).toBe(400);
+		expect(((await missing.json()) as { error: string }).error).toContain('board_id is required');
+
+		const badBoard = await POST(event({ id: a.id }, jsonBody({ board_id: 'missing' })));
+		expect(badBoard.status).toBe(404);
+
+		const noItem = await POST(event({ id: 'missing' }, jsonBody({ board_id: board.id })));
+		expect(noItem.status).toBe(404);
+
+		const res = await POST(event({ id: a.id }, jsonBody({ board_id: board.id })));
+		expect(res.status).toBe(200);
+		const moved = (await res.json()) as { id: string; board_id: string };
+		expect(moved.id).toBe(a.id);
+		expect(moved.board_id).toBe(board.id);
+		// the edge follows the item because its other endpoint is on the target board
+		expect(getEdge(edge.id)?.board_id).toBe(board.id);
+	});
+
+	it('POST duplicate: 201 with a copy (content, offset position, optional board/suffix), 404 unknown', async () => {
+		const { createItem, createBoard, getItem } = await import('../../lib/store.js');
+		const { POST } = await import('./items/[id]/duplicate/+server.js');
+
+		const src = createItem({ title: 'orig', kind: 'plan', x: 10, y: 10, tags: ['t'], body_md: 'body' });
+		const board = createBoard('Clone board');
+
+		expect((await POST(event({ id: 'missing' }, jsonBody({})))).status).toBe(404);
+
+		const res = await POST(
+			event({ id: src.id }, jsonBody({ board_id: board.id, title_suffix: ' (copy)' }))
+		);
+		expect(res.status).toBe(201);
+		const copy = (await res.json()) as {
+			id: string;
+			title: string;
+			kind: string;
+			board_id: string;
+			x: number;
+			y: number;
+			tags: string[];
+			body_md: string;
+		};
+		expect(copy.id).not.toBe(src.id);
+		expect(copy.title).toBe('orig (copy)');
+		expect(copy.kind).toBe('plan');
+		expect(copy.board_id).toBe(board.id);
+		expect(copy.tags).toEqual(['t']);
+		expect(copy.body_md).toBe('body');
+		expect(copy.x).toBe(40);
+		expect(copy.y).toBe(40);
+		expect(getItem(src.id)).not.toBeNull();
+
+		// default: same board, no suffix
+		const plain = await POST(event({ id: src.id }, jsonBody({})));
+		expect(plain.status).toBe(201);
+		const copy2 = (await plain.json()) as { board_id: string; title: string };
+		expect(copy2.board_id).toBe('default');
+		expect(copy2.title).toBe('orig');
+	});
+
 	it('maps raw sqlite constraint errors by message', async () => {
 		const { toErrorResponse } = await import('./_util.js');
 		const fk = toErrorResponse(new Error('FOREIGN KEY constraint failed'));
