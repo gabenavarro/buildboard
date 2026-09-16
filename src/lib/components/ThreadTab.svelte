@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api.js';
 	import type { Item, Thread, Message } from '$lib/db.js';
+	import MarkdownView from './MarkdownView.svelte';
 
 	let { item }: { item: Item } = $props();
 
@@ -44,7 +45,7 @@
 			{#each messages as msg (msg.id)}
 				<div class="msg {msg.role}">
 					<span class="role">{msg.role}</span>
-					<div class="content">{msg.content}</div>
+					<div class="content"><MarkdownView text={msg.content} /></div>
 				</div>
 			{/each}
 			{#if messages.length === 0}
@@ -107,8 +108,6 @@
 	.content {
 		margin-top: 4px;
 		font-size: 13px;
-		white-space: pre-wrap;
-		word-break: break-word;
 	}
 	.composer {
 		display: flex;
