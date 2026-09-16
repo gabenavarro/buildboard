@@ -15,13 +15,15 @@
 	let nodes = $state<BoardNode[]>([]);
 	let edges = $state<Edge[]>([]);
 	let selected = $state<Item | null>(null);
+	let selectedNodes = $state<BoardNode[]>([]);
+	let selectedEdges = $state<Edge[]>([]);
 	let loaded = $state(false);
 	let justCreatedId = $state<string | null>(null);
 	let boardRef = $state<HTMLElement | null>(null);
 
 	const nodeTypes = { item: ItemNode };
 
-	const { screenToFlowPosition } = useSvelteFlow();
+	const { screenToFlowPosition, fitView, setZoom } = useSvelteFlow();
 
 	setContext('board:statuschange', (item: Item) => handleUpdated(item));
 
@@ -32,6 +34,8 @@
 	async function load() {
 		loaded = false;
 		selected = null;
+		selectedNodes = [];
+		selectedEdges = [];
 		try {
 			const [items, edgeList] = await Promise.all([
 				api.listItems({ board: boardId }),
@@ -106,6 +110,38 @@
 		return () => el.removeEventListener('dblclick', handlePaneDblClick);
 	});
 
+	$effect(() => {
+		function handleKeydown(e: KeyboardEvent) {
+			if (!loaded) return;
+			const ae = document.activeElement;
+			if (
+				ae &&
+				(ae instanceof HTMLInputElement ||
+					ae instanceof HTMLTextAreaElement ||
+					ae instanceof HTMLSelectElement ||
+					(ae as HTMLElement).isContentEditable)
+			) {
+				return;
+			}
+			if (e.key === 'Delete' || e.key === 'Backspace') {
+				if (selectedNodes.length > 0 || selectedEdges.length > 0) {
+					e.preventDefault();
+					void handleDelete({ nodes: selectedNodes, edges: selectedEdges });
+				}
+			} else if (e.key === 'f' || e.key === 'F') {
+				e.preventDefault();
+				void fitView();
+			} else if (e.key === '0') {
+				e.preventDefault();
+				void setZoom(1);
+			} else if (e.key === 'Escape') {
+				selected = null;
+			}
+		}
+		window.addEventListener('keydown', handleKeydown);
+		return () => window.removeEventListener('keydown', handleKeydown);
+	});
+
 	async function handleConnect(connection: Connection) {
 		try {
 			const edge = await api.createEdge({
@@ -144,7 +180,9 @@
 		if (sel && removedNodes.some((n) => n.id === sel.id)) selected = null;
 	}
 
-	function handleSelectionChange({ nodes: selNodes }: { nodes: BoardNode[] }) {
+	function handleSelectionChange({ nodes: selNodes, edges: selEdges }: { nodes: BoardNode[]; edges: Edge[] }) {
+		selectedNodes = selNodes;
+		selectedEdges = selEdges;
 		selected = selNodes.length > 0 ? findItem(selNodes[0].id) : null;
 	}
 

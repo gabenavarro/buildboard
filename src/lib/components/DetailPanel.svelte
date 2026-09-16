@@ -43,6 +43,22 @@
 	let saving = $state(false);
 	let error = $state('');
 
+	function canonTags(text: string): string {
+		return text
+			.split(',')
+			.map((t) => t.trim())
+			.filter((t) => t.length > 0)
+			.join(', ');
+	}
+
+	const dirty = $derived(
+		title !== item.title ||
+			kind !== item.kind ||
+			status !== item.status ||
+			canonTags(tagsText) !== canonTags(item.tags.join(', ')) ||
+			bodyMd !== item.body_md
+	);
+
 	async function save() {
 		saving = true;
 		error = '';
@@ -64,6 +80,17 @@
 		ondelete(item.id);
 	}
 
+	$effect(() => {
+		function onKeydown(e: KeyboardEvent) {
+			if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+				e.preventDefault();
+				void save();
+			}
+		}
+		window.addEventListener('keydown', onKeydown);
+		return () => window.removeEventListener('keydown', onKeydown);
+	});
+
 	const tabs: { id: Tab; label: string; show: boolean }[] = [
 		{ id: 'item', label: 'Item', show: true },
 		{ id: 'thread', label: 'Thread', show: true },
@@ -75,7 +102,10 @@
 
 <aside class="panel">
 	<header>
-		<span class="eyebrow">item</span>
+		<span class="head-left">
+			<span class="eyebrow">item</span>
+			{#if dirty}<span class="unsaved">● unsaved</span>{/if}
+		</span>
 		<button class="icon" onclick={onclose} aria-label="Close">✕</button>
 	</header>
 
@@ -170,11 +200,20 @@
 		justify-content: space-between;
 		align-items: center;
 	}
+	.head-left {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
 	.eyebrow {
 		font-size: 11px;
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
 		color: var(--text-dim);
+	}
+	.unsaved {
+		font-size: 11px;
+		color: var(--accent);
 	}
 	.icon {
 		padding: 2px 8px;
