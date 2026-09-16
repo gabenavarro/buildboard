@@ -31,7 +31,7 @@ async function waitForServer(timeoutMs = 30000) {
     try {
       const res = await fetch(`${BASE}/api/health`);
       if (res.ok) return;
-    } catch {}
+    } catch { /* expected */ }
     await new Promise((r) => setTimeout(r, 300));
   }
   throw new Error('dev server did not start in time');
@@ -57,10 +57,15 @@ function check(label, cond, detail = '') {
 }
 
 try {
+  // Safety net: a crashed/abandoned run can leave a vite on this port, and then
+  // we'd silently test the wrong server (and its stale DB).
+  execSync(`pkill -9 -f "vite dev --port \${PORT} --strict[P]ort" || true`);
+
   child = spawn('npx', ['vite', 'dev', '--port', String(PORT), '--strictPort'], {
     cwd: repoRoot,
     env: { ...process.env, BUILDBOARD_DB: dbFile },
-    stdio: ['ignore', 'ignore', 'ignore']
+    stdio: 'ignore',
+    detached: true
   });
 
   await waitForServer();
@@ -130,6 +135,53 @@ try {
     .catch(() => {});
   check('original nodes back after switch', (await page.locator('.svelte-flow__node .card').count()) === 3);
 
+  // Board-create modal (replaces prompt())
+  await page.locator('.boards button[title="New board"]').click();
+  const modalInput = page.locator('.modal input');
+  await modalInput.waitFor({ timeout: 5000 });
+  await modalInput.fill('E2E Board Three');
+  await modalInput.press('Enter');
+  await page.waitForTimeout(700);
+  check('create modal closed after submit', (await page.locator('.modal').count()) === 0);
+  check('new board selected after create', (await page.locator('select option:checked').textContent()) === 'E2E Board Three (0)');
+
+  // Context menu: duplicate on this board, then move to another board
+  await page.locator('select').first().selectOption({ index: 0 });
+  await page
+    .waitForFunction(() => document.querySelectorAll('.svelte-flow__node .card').length === 3, null, { timeout: 15000 })
+    .catch(() => {});
+  const alpha = page.locator('.svelte-flow__node', { hasText: 'E2E Alpha' }).first();
+  await alpha.dispatchEvent('contextmenu', { button: 2 });
+  const ctxMenu = page.locator('.menu');
+  check('context menu opened on node', (await ctxMenu.count()) === 1);
+  check('menu lists other boards (move + duplicate)', (await ctxMenu.locator('button', { hasText: 'E2E Board Two' }).count()) === 2);
+  await ctxMenu.locator('button', { hasText: 'Duplicate' }).first().click();
+  await page
+    .waitForFunction(() => document.querySelectorAll('.svelte-flow__node .card').length === 4, null, { timeout: 10000 })
+    .catch(() => {});
+  check('duplicate added a node', (await page.locator('.svelte-flow__node .card').count()) === 4);
+
+  // move a unique node (Alpha now has a duplicate on this board)
+  const beta = page.locator('.svelte-flow__node', { hasText: 'E2E Beta' }).first();
+  await beta.dispatchEvent('contextmenu', { button: 2 });
+  await page.locator('.menu button', { hasText: 'E2E Board Two' }).first().click();
+  await page
+    .waitForFunction(() => document.querySelectorAll('.svelte-flow__node .card').length === 3, null, { timeout: 10000 })
+    .catch(() => {});
+  check('move removed the node from this board', (await page.locator('.svelte-flow__node .card').count()) === 3);
+  check('moved title gone from canvas', (await page.locator('.svelte-flow__node .title', { hasText: 'E2E Beta' }).count()) === 0);
+  check('duplicate copy still on this board', (await page.locator('.svelte-flow__node .title', { hasText: 'E2E Alpha' }).count()) === 2);
+
+  // Board-delete modal (replaces confirm())
+  await page.locator('select').first().selectOption({ label: 'E2E Board Three (0)' });
+  await page.locator('.boards button[title="Delete board"]').click();
+  const deleteModal = page.locator('.modal');
+  await deleteModal.waitFor({ timeout: 5000 });
+  check('delete modal names the board', (await deleteModal.textContent())?.includes('E2E Board Three'));
+  await deleteModal.locator('button', { hasText: 'Delete' }).click();
+  await page.waitForTimeout(700);
+  check('board deleted via modal', (await page.locator('select option').count()) === 2);
+
 
 
   clearTimeout(watchdog);
@@ -146,12 +198,15 @@ try {
 			} catch {
 				try {
 					child.kill(sig);
-				} catch {}
+				} catch { /* expected */ }
 			}
 		};
 		killGroup('SIGTERM');
 		setTimeout(() => killGroup('SIGKILL'), 2000).unref();
 	}
   clearTimeout(watchdog);
+  try {
+    execSync(`pkill -9 -f "vite dev --port \${PORT} --strict[P]ort" || true`);
+  } catch { /* expected */ }
   rmSync(dbDir, { recursive: true, force: true });
 }

@@ -5,18 +5,21 @@
 	import ItemNode from '$lib/components/ItemNode.svelte';
 	import Palette from '$lib/components/Palette.svelte';
 	import DetailPanel from '$lib/components/DetailPanel.svelte';
+	import ContextMenu from '$lib/components/ContextMenu.svelte';
 	import { api } from '$lib/api.js';
-	import type { Item, ItemKind } from '$lib/types.js';
+	import type { Item, ItemKind, BoardWithCount } from '$lib/types.js';
 
 	type BoardNode = Node<{ item: Item }>;
 
 	let {
 		boardId,
+		boards = [],
 		focusItem = null,
 		onfocusconsumed,
 		onitemchanged
 	}: {
 		boardId: string;
+		boards?: BoardWithCount[];
 		focusItem?: string | null;
 		onfocusconsumed?: () => void;
 		onitemchanged?: () => void;
@@ -37,6 +40,7 @@
 	const { screenToFlowPosition, fitView, setZoom, setCenter, getZoom } = useSvelteFlow();
 
 	let zoomPct = $state(100);
+	let ctxMenu = $state<{ x: number; y: number; item: Item } | null>(null);
 
 	function syncZoom() {
 		zoomPct = Math.round(getZoom() * 100);
@@ -142,12 +146,56 @@
 		void createItemAt('note', { x: e.clientX, y: e.clientY });
 	}
 
+	function handleNodeContextMenu(e: MouseEvent) {
+		const target = e.target as HTMLElement | null;
+		const nodeEl = target?.closest?.('.svelte-flow__node');
+		if (!nodeEl) return;
+		e.preventDefault();
+		const id = nodeEl.getAttribute('data-id');
+		const item = id ? findItem(id) : null;
+		if (!item) return;
+		ctxMenu = { x: e.clientX, y: e.clientY, item };
+	}
+
+	async function handleMoveNode(item: Item, targetBoardId: string) {
+		try {
+			await api.moveItem(item.id, targetBoardId);
+			if (targetBoardId !== boardId) {
+				// item left the current board — drop the node
+				nodes = nodes.filter((n) => n.id !== item.id);
+				if (selected?.id === item.id) selected = null;
+			}
+			onitemchanged?.();
+		} catch (e) {
+			console.error(e);
+		}
+	}
+
+	async function handleDuplicateNode(item: Item, targetBoardId?: string) {
+		try {
+			const copy = await api.duplicateItem(item.id, targetBoardId ? { board_id: targetBoardId } : undefined);
+			if (copy.board_id === boardId) {
+				nodes = [
+					...nodes,
+					{ id: copy.id, type: 'item', position: { x: copy.x, y: copy.y }, data: { item: copy } }
+				];
+			}
+			onitemchanged?.();
+		} catch (e) {
+			console.error(e);
+		}
+	}
+
 	$effect(() => {
 		if (!loaded) return;
 		const el = flowContainer();
 		if (!el) return;
 		el.addEventListener('dblclick', handlePaneDblClick);
-		return () => el.removeEventListener('dblclick', handlePaneDblClick);
+		el.addEventListener('contextmenu', handleNodeContextMenu);
+		return () => {
+			el.removeEventListener('dblclick', handlePaneDblClick);
+			el.removeEventListener('contextmenu', handleNodeContextMenu);
+		};
 	});
 
 	$effect(() => {
@@ -312,6 +360,19 @@
 			<button onclick={exportMarkdown} title="Export board to markdown">Export .md</button>
 		</div>
 	</div>
+
+	{#if ctxMenu}
+		{@const menu = ctxMenu}
+		<ContextMenu
+			x={menu.x}
+			y={menu.y}
+			item={menu.item}
+			{boards}
+			onclose={() => (ctxMenu = null)}
+			onmove={(it, b) => void handleMoveNode(it, b)}
+			onduplicate={(it, b) => void handleDuplicateNode(it, b)}
+		/>
+	{/if}
 
 	{#if selected}
 		{#key selected.id}
