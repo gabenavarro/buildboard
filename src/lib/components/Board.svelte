@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { SvelteFlow, Background, MiniMap, useSvelteFlow, type Node, type Edge, type Connection } from '@xyflow/svelte';
+	import { setContext } from 'svelte';
 
 	import ItemNode from '$lib/components/ItemNode.svelte';
 	import Palette from '$lib/components/Palette.svelte';
@@ -15,10 +16,18 @@
 	let edges = $state<Edge[]>([]);
 	let selected = $state<Item | null>(null);
 	let loaded = $state(false);
+	let justCreatedId = $state<string | null>(null);
+	let boardRef = $state<HTMLElement | null>(null);
 
 	const nodeTypes = { item: ItemNode };
 
 	const { screenToFlowPosition } = useSvelteFlow();
+
+	setContext('board:statuschange', (item: Item) => handleUpdated(item));
+
+	function flowContainer(): HTMLElement | null {
+		return boardRef?.querySelector('.svelte-flow') ?? null;
+	}
 
 	async function load() {
 		loaded = false;
@@ -57,13 +66,13 @@
 		return node ? (node.data.item as Item) : null;
 	}
 
-	async function handleCreate(kind: ItemKind, client: { x: number; y: number }) {
+	async function createItemAt(kind: ItemKind, client: { x: number; y: number }) {
 		const pos = screenToFlowPosition(client);
 		const item = await api.createItem({
 			kind,
 			title: `New ${kind}`,
-			x: Math.round(pos.x + Math.random() * 40 - 20),
-			y: Math.round(pos.y + Math.random() * 40 - 20),
+			x: Math.round(pos.x),
+			y: Math.round(pos.y),
 			board_id: boardId
 		});
 		nodes = [
@@ -71,7 +80,31 @@
 			{ id: item.id, type: 'item', position: { x: item.x, y: item.y }, data: { item } }
 		];
 		selected = item;
+		justCreatedId = item.id;
 	}
+
+	async function handleCreate(kind: ItemKind, client: { x: number; y: number }) {
+		const rect = flowContainer()?.getBoundingClientRect();
+		const screen = rect
+			? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+			: client;
+		await createItemAt(kind, screen);
+	}
+
+	function handlePaneDblClick(e: MouseEvent) {
+		const target = e.target as HTMLElement | null;
+		if (!target) return;
+		if (target.closest('.svelte-flow__node') || target.closest('.svelte-flow__minimap')) return;
+		void createItemAt('note', { x: e.clientX, y: e.clientY });
+	}
+
+	$effect(() => {
+		if (!loaded) return;
+		const el = flowContainer();
+		if (!el) return;
+		el.addEventListener('dblclick', handlePaneDblClick);
+		return () => el.removeEventListener('dblclick', handlePaneDblClick);
+	});
 
 	async function handleConnect(connection: Connection) {
 		try {
@@ -163,7 +196,7 @@
 </script>
 
 <div class="wrap">
-	<div class="board">
+	<div class="board" bind:this={boardRef}>
 		{#if loaded}
 			<SvelteFlow
 				{nodes}
@@ -183,6 +216,10 @@
 			<div class="loading">loading board…</div>
 		{/if}
 
+		{#if loaded && nodes.length === 0}
+			<div class="hint">Double-click anywhere to add a note</div>
+		{/if}
+
 		<div class="overlays">
 			<Palette onCreate={handleCreate} />
 		</div>
@@ -195,7 +232,11 @@
 		{#key selected.id}
 			<DetailPanel
 				item={selected}
-				onclose={() => (selected = null)}
+				autofocusTitle={selected.id === justCreatedId}
+				onclose={() => {
+					selected = null;
+					justCreatedId = null;
+				}}
 				ondelete={(id) => void handleDeleted(id)}
 				onupdated={handleUpdated}
 			/>
@@ -221,6 +262,15 @@
 		display: grid;
 		place-items: center;
 		color: var(--text-dim);
+	}
+	.hint {
+		position: absolute;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		color: var(--text-dim);
+		pointer-events: none;
+		font-size: 14px;
 	}
 	.overlays {
 		position: absolute;

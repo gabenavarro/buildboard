@@ -8,15 +8,26 @@
 
 	let {
 		item,
+		autofocusTitle = false,
 		onclose,
 		ondelete,
 		onupdated
 	}: {
 		item: Item;
+		autofocusTitle?: boolean;
 		onclose: () => void;
 		ondelete: (id: string) => void;
 		onupdated: (item: Item) => void;
 	} = $props();
+
+	let titleInput = $state<HTMLInputElement | null>(null);
+
+	$effect(() => {
+		if (autofocusTitle) {
+			titleInput?.focus();
+			titleInput?.select();
+		}
+	});
 
 	const KINDS: ItemKind[] = ['note', 'concept', 'task', 'plan', 'decision', 'agent_task'];
 	const STATUSES: ItemStatus[] = ['open', 'in_progress', 'done', 'blocked'];
@@ -78,7 +89,11 @@
 		<div class="tabbody">
 			<label>
 				<span>Title</span>
-				<input value={title} oninput={(e) => (title = e.currentTarget.value)} />
+				<input
+					bind:this={titleInput}
+					value={title}
+					oninput={(e) => (title = e.currentTarget.value)}
+				/>
 			</label>
 
 			<div class="row">
