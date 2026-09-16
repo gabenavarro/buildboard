@@ -1,42 +1,59 @@
-# sv
+# buildboard
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+A whiteboard + decision database + subagent runner for planning build-outs together with your AI.
 
-## Creating a project
+- **Whiteboard** — a structured node graph (typed nodes: note, concept, task, plan, decision, agent_task) connected by edges.
+- **Decision database** — SQLite storage for discussions, decisions, and concepts, designed to expose *compact* context to agents so it never overwhelms a context window.
+- **Subagents** — spawn opencode subagents from a board node to expand a concept or plan in detail; results stream back and write themselves onto the board.
+- **MCP server** — exposes the board and database to your opencode session so the agent can read/write it directly during a conversation.
 
-If you're seeing this, you've probably already done this step. Congrats!
+## Status
 
-```sh
-# create a new project
-npx sv create my-app
-```
+Under active development. Milestones:
 
-To recreate this project with the same configuration:
-
-```sh
-# recreate this project
-npx sv@0.17.0 create --template minimal --types ts --add eslint --install npm buildboard
-```
+- [ ] M0 — SQLite schema + board CRUD API
+- [ ] M1 — Board UI (node graph, persistence)
+- [ ] M2 — Threads, decisions, concepts + search + brief
+- [ ] M3 — Subagent runner (streaming, write-back)
+- [ ] M4 — MCP server + integration
+- [ ] M5 — Polish (minimap, export, tests)
 
 ## Developing
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
 ```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+npm install
+npm run dev        # http://localhost:5173
 ```
 
-## Building
-
-To create a production version of your app:
+Production build (node adapter):
 
 ```sh
 npm run build
+node build/index.js
 ```
 
-You can preview the production build with `npm run preview`.
+The SQLite database lives at `data/buildboard.db` (override with `BUILDBOARD_DB`).
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+## API (v1)
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/health` | Health check + table inventory |
+| GET | `/api/items` | List items (`?kind=&tag=&status=&parent_id=`) |
+| POST | `/api/items` | Create item |
+| GET | `/api/items/:id` | Get one item |
+| PATCH | `/api/items/:id` | Update item fields |
+| DELETE | `/api/items/:id` | Delete item |
+| GET | `/api/edges` | List edges |
+| POST | `/api/edges` | Create edge |
+| DELETE | `/api/edges/:id` | Delete edge |
+
+## Scripts
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Dev server |
+| `npm run build` | Production build |
+| `npm run check` | Typecheck (svelte-check) |
+| `npm run lint` | ESLint |
+| `npm test` | Vitest unit tests |
