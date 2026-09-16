@@ -15,7 +15,7 @@ Under active development. Milestones:
 - [x] M1 — Board UI (node graph, persistence)
 - [x] M2 — Threads, decisions, concepts + search + brief
 - [x] M3 — Subagent runner (streaming, write-back)
-- [ ] M4 — MCP server + integration
+- [x] M4 — MCP server + integration
 - [ ] M5 — Polish (minimap, export, tests)
 
 ## Developing
@@ -72,6 +72,33 @@ The subagent runner shells out to `opencode run --format json --agent <agent> --
 The working directory defaults to the app's CWD; override with `BUILDBOARD_AGENT_DIR`.
 Permissions are never auto-approved — a running subagent behaves like an ordinary opencode agent.
 
+## MCP server
+
+buildboard ships a stdio MCP server so your opencode session can read/write the board
+directly during a conversation.
+
+Tools: `bb_brief`, `bb_search`, `bb_item_list`, `bb_item_get`, `bb_item_upsert`,
+`bb_edge_add`, `bb_decision_add`, `bb_decision_list`, `bb_message_add`, `bb_messages`,
+`bb_spawn_agent`.
+
+Register it in your `opencode.json` (or the project's `opencode.json`):
+
+```json
+{
+	"$schema": "https://opencode.ai/config.json",
+	"mcp": {
+		"buildboard": {
+			"type": "local",
+			"command": ["npm", "--prefix", "/path/to/buildboard", "run", "mcp"],
+			"enabled": true
+		}
+	}
+}
+```
+
+The server uses the same `data/buildboard.db` as the app (override with `BUILDBOARD_DB`),
+so anything written through MCP shows up on the board immediately.
+
 ## Scripts
 
 | Command | Purpose |
@@ -81,3 +108,4 @@ Permissions are never auto-approved — a running subagent behaves like an ordin
 | `npm run check` | Typecheck (svelte-check) |
 | `npm run lint` | ESLint |
 | `npm test` | Vitest unit tests |
+| `npm run mcp` | Bundle + run the MCP server (stdio) |
