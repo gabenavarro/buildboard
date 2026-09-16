@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { SvelteFlow, Background, useSvelteFlow, type Node, type Edge, type Connection } from '@xyflow/svelte';
+	import { SvelteFlow, Background, MiniMap, useSvelteFlow, type Node, type Edge, type Connection } from '@xyflow/svelte';
 
 	import ItemNode from '$lib/components/ItemNode.svelte';
 	import Palette from '$lib/components/Palette.svelte';
@@ -8,6 +8,8 @@
 	import type { Item, ItemKind } from '$lib/db.js';
 
 	type BoardNode = Node<{ item: Item }>;
+
+	let { boardId, onitemchanged }: { boardId: string; onitemchanged?: () => void } = $props();
 
 	let nodes = $state<BoardNode[]>([]);
 	let edges = $state<Edge[]>([]);
@@ -19,8 +21,13 @@
 	const { screenToFlowPosition } = useSvelteFlow();
 
 	async function load() {
+		loaded = false;
+		selected = null;
 		try {
-			const [items, edgeList] = await Promise.all([api.listItems(), api.listEdges()]);
+			const [items, edgeList] = await Promise.all([
+				api.listItems({ board: boardId }),
+				api.listEdges().then((all) => all.filter((e) => e.board_id === boardId))
+			]);
 			nodes = items.map((item) => ({
 				id: item.id,
 				type: 'item',
@@ -39,7 +46,11 @@
 		loaded = true;
 	}
 
-	void load();
+	$effect(() => {
+		// Runs on mount and again whenever the active board changes.
+		void boardId;
+		void load();
+	});
 
 	function findItem(id: string): Item | null {
 		const node = nodes.find((n) => n.id === id);
@@ -52,7 +63,8 @@
 			kind,
 			title: `New ${kind}`,
 			x: Math.round(pos.x + Math.random() * 40 - 20),
-			y: Math.round(pos.y + Math.random() * 40 - 20)
+			y: Math.round(pos.y + Math.random() * 40 - 20),
+			board_id: boardId
 		});
 		nodes = [
 			...nodes,
@@ -66,7 +78,8 @@
 			const edge = await api.createEdge({
 				from_id: connection.source!,
 				to_id: connection.target!,
-				kind: 'depends_on'
+				kind: 'depends_on',
+				board_id: boardId
 			});
 			edges = [
 				...edges,
@@ -110,6 +123,7 @@
 		const node = nodes.find((n) => n.id === item.id);
 		if (node) node.data.item = item;
 		selected = item;
+		onitemchanged?.();
 	}
 
 	async function handleDeleted(id: string) {
@@ -117,6 +131,34 @@
 		nodes = nodes.filter((n) => n.id !== id);
 		edges = edges.filter((e) => e.source !== id && e.target !== id);
 		selected = null;
+		onitemchanged?.();
+	}
+
+	function exportMarkdown() {
+		const lines: string[] = [`# Buildboard — ${boardId}`, ''];
+		for (const n of nodes) {
+			const it = n.data.item as Item;
+			lines.push(`## [${it.kind}] ${it.title}`);
+			if (it.status) lines.push(`_status: ${it.status}_`);
+			if (it.tags.length) lines.push(`_tags: ${it.tags.join(', ')}_`);
+			if (it.body_md) lines.push('', it.body_md);
+			lines.push('');
+		}
+		if (edges.length) {
+			lines.push('## Edges');
+			for (const e of edges) {
+				const s = nodes.find((n) => n.id === e.source)?.data.item?.title ?? e.source;
+				const t = nodes.find((n) => n.id === e.target)?.data.item?.title ?? e.target;
+				lines.push(`- ${s} → ${t}${e.label ? ` (${e.label})` : ''}`);
+			}
+		}
+		const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `buildboard-${boardId}.md`;
+		a.click();
+		URL.revokeObjectURL(url);
 	}
 </script>
 
@@ -135,6 +177,7 @@
 				onpaneclick={handlePaneClick}
 			>
 				<Background />
+				<MiniMap />
 			</SvelteFlow>
 		{:else}
 			<div class="loading">loading board…</div>
@@ -142,6 +185,9 @@
 
 		<div class="overlays">
 			<Palette onCreate={handleCreate} />
+		</div>
+		<div class="actions">
+			<button onclick={exportMarkdown} title="Export board to markdown">Export .md</button>
 		</div>
 	</div>
 
@@ -181,5 +227,13 @@
 		top: 10px;
 		left: 10px;
 		z-index: 5;
+	}
+	.actions {
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		z-index: 5;
+		display: flex;
+		gap: 6px;
 	}
 </style>

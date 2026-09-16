@@ -2,11 +2,11 @@ import type { RequestHandler } from '@sveltejs/kit';
 import { listEdges, createEdge } from '$lib/store.js';
 import { json, badRequest, readJson } from '../_util.js';
 
-export const GET: RequestHandler = async () => {
-	return json(listEdges());
+export const GET: RequestHandler = async ({ url }) => {
+	return json(listEdges(url.searchParams.get('board') ?? undefined));
 };
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, url }) => {
 	const body = await readJson(request);
 	const from_id = body.from_id;
 	const to_id = body.to_id;
@@ -17,7 +17,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		from_id,
 		to_id,
 		kind: typeof body.kind === 'string' ? body.kind : undefined,
-		label: typeof body.label === 'string' ? body.label : undefined
+		label: typeof body.label === 'string' ? body.label : undefined,
+		board_id: url.searchParams.get('board') ?? undefined
 	});
 	return json(edge, 201);
 };

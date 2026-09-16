@@ -11,7 +11,8 @@ import type {
 	DecisionStatus,
 	Concept,
 	AgentTask,
-	AgentTaskStatus
+	AgentTaskStatus,
+	Board
 } from './db.js';
 
 function parseTags(raw: string): string[] {
@@ -36,6 +37,7 @@ function rowToItem(row: Record<string, unknown>): Item {
 		status: row.status as ItemStatus,
 		tags: parseTags(row.tags as string),
 		parent_id: (row.parent_id as string | null) ?? null,
+		board_id: (row.board_id as string) ?? 'default',
 		created_at: row.created_at as string,
 		updated_at: row.updated_at as string
 	};
@@ -52,6 +54,7 @@ export interface CreateItemInput {
 	status?: ItemStatus;
 	tags?: string[];
 	parent_id?: string | null;
+	board_id?: string;
 }
 
 export function validateCreateItem(input: Record<string, unknown>): { ok: true; value: CreateItemInput } | { ok: false; error: string } {
@@ -82,7 +85,8 @@ export function validateCreateItem(input: Record<string, unknown>): { ok: true; 
 			h: typeof input.h === 'number' ? input.h : null,
 			status,
 			tags: Array.isArray(tags) ? tags.filter((t) => typeof t === 'string') : [],
-			parent_id: typeof input.parent_id === 'string' ? input.parent_id : null
+			parent_id: typeof input.parent_id === 'string' ? input.parent_id : null,
+			board_id: typeof input.board_id === 'string' ? input.board_id : 'default'
 		}
 	};
 }
@@ -91,8 +95,8 @@ export function createItem(input: CreateItemInput): Item {
 	const db = getDb();
 	const id = newId();
 	db.prepare(
-		`INSERT INTO items (id, kind, title, body_md, x, y, w, h, status, tags, parent_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		`INSERT INTO items (id, kind, title, body_md, x, y, w, h, status, tags, parent_id, board_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	).run(
 		id,
 		input.kind ?? 'note',
@@ -104,15 +108,22 @@ export function createItem(input: CreateItemInput): Item {
 		input.h ?? null,
 		input.status ?? 'open',
 		JSON.stringify(input.tags ?? []),
-		input.parent_id ?? null
+		input.parent_id ?? null,
+		input.board_id ?? 'default'
 	);
 	return getItem(id)!;
 }
 
-export function listItems(filter: { kind?: string; tag?: string; status?: string; parent_id?: string } = {}): Item[] {
+export function listItems(
+	filter: { kind?: string; tag?: string; status?: string; parent_id?: string; board_id?: string } = {}
+): Item[] {
 	const db = getDb();
 	const where: string[] = [];
 	const params: (string | number)[] = [];
+	if (filter.board_id) {
+		where.push('board_id = ?');
+		params.push(filter.board_id);
+	}
 	if (filter.kind) {
 		where.push('kind = ?');
 		params.push(filter.kind);
@@ -184,23 +195,30 @@ export interface CreateEdgeInput {
 	to_id: string;
 	kind?: string;
 	label?: string;
+	board_id?: string;
 }
 
 export function createEdge(input: CreateEdgeInput): Edge {
 	const db = getDb();
 	const id = newId();
-	db.prepare('INSERT INTO edges (id, from_id, to_id, kind, label) VALUES (?, ?, ?, ?, ?)').run(
+	db.prepare('INSERT INTO edges (id, from_id, to_id, kind, label, board_id) VALUES (?, ?, ?, ?, ?, ?)').run(
 		id,
 		input.from_id,
 		input.to_id,
 		input.kind ?? 'depends_on',
-		input.label ?? ''
+		input.label ?? '',
+		input.board_id ?? 'default'
 	);
 	return db.prepare('SELECT * FROM edges WHERE id = ?').get(id) as unknown as Edge;
 }
 
-export function listEdges(): Edge[] {
+export function listEdges(board_id?: string): Edge[] {
 	const db = getDb();
+	if (board_id) {
+		return db.prepare('SELECT * FROM edges WHERE board_id = ? ORDER BY created_at').all(
+			board_id
+		) as unknown as Edge[];
+	}
 	return db.prepare('SELECT * FROM edges ORDER BY created_at').all() as unknown as Edge[];
 }
 
@@ -476,4 +494,40 @@ export function finishAgentTask(id: string, status: AgentTaskStatus, transcript?
 	db.prepare(
 		`UPDATE agent_tasks SET status = ?, transcript = COALESCE(?, transcript), finished_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`
 	).run(status, transcript ?? null, id);
+}
+
+// ---------- boards ----------
+
+export function listBoards(): Board[] {
+	const db = getDb();
+	return db.prepare('SELECT * FROM boards ORDER BY created_at').all() as unknown as Board[];
+}
+
+export function getBoard(id: string): Board | null {
+	const db = getDb();
+	const row = db.prepare('SELECT * FROM boards WHERE id = ?').get(id);
+	return row ? (row as unknown as Board) : null;
+}
+
+export function createBoard(name: string): Board {
+	const db = getDb();
+	const id = `b_${newId().slice(0, 8)}`;
+	db.prepare('INSERT INTO boards (id, name) VALUES (?, ?)').run(id, name);
+	return getBoard(id)!;
+}
+
+export function renameBoard(id: string, name: string): Board | null {
+	const db = getDb();
+	if (!getBoard(id)) return null;
+	db.prepare('UPDATE boards SET name = ? WHERE id = ?').run(name, id);
+	return getBoard(id);
+}
+
+export function deleteBoard(id: string): boolean {
+	if (id === 'default') return false;
+	const db = getDb();
+	const items = (db.prepare('SELECT COUNT(*) AS n FROM items WHERE board_id = ?').get(id) as { n: number }).n;
+	if (items > 0) return false;
+	const res = db.prepare('DELETE FROM boards WHERE id = ?').run(id);
+	return res.changes > 0;
 }

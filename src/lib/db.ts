@@ -9,6 +9,12 @@ export type MessageRole = 'user' | 'agent' | 'subagent' | 'system';
 export type DecisionStatus = 'active' | 'superseded';
 export type AgentTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'canceled';
 
+export interface Board {
+	id: string;
+	name: string;
+	created_at: string;
+}
+
 export interface Item {
 	id: string;
 	kind: ItemKind;
@@ -21,6 +27,7 @@ export interface Item {
 	status: ItemStatus;
 	tags: string[];
 	parent_id: string | null;
+	board_id: string;
 	created_at: string;
 	updated_at: string;
 }
@@ -31,6 +38,7 @@ export interface Edge {
 	to_id: string;
 	kind: string;
 	label: string;
+	board_id: string;
 	created_at: string;
 }
 
@@ -232,7 +240,18 @@ const MIGRATIONS = [
 	`CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
 		INSERT INTO fts_messages(fts_messages, rowid, content) VALUES ('delete', old.rowid, old.content);
 		INSERT INTO fts_messages(rowid, content) VALUES (new.rowid, new.content);
-	END`
+	END`,
+	// Multi-board support
+	`CREATE TABLE IF NOT EXISTS boards (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+	)`,
+	`INSERT OR IGNORE INTO boards (id, name) VALUES ('default', 'Main board')`,
+	`ALTER TABLE items ADD COLUMN board_id TEXT NOT NULL DEFAULT 'default'`,
+	`ALTER TABLE edges ADD COLUMN board_id TEXT NOT NULL DEFAULT 'default'`,
+	`CREATE INDEX IF NOT EXISTS idx_items_board ON items(board_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_edges_board ON edges(board_id)`
 ];
 
 const MIGRATION_NAMES = MIGRATIONS.map((_, i) => `m${String(i).padStart(3, '0')}`);
