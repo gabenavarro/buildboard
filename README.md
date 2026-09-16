@@ -14,7 +14,7 @@ Under active development. Milestones:
 - [x] M0 — SQLite schema + board CRUD API
 - [x] M1 — Board UI (node graph, persistence)
 - [x] M2 — Threads, decisions, concepts + search + brief
-- [ ] M3 — Subagent runner (streaming, write-back)
+- [x] M3 — Subagent runner (streaming, write-back)
 - [ ] M4 — MCP server + integration
 - [ ] M5 — Polish (minimap, export, tests)
 
@@ -62,6 +62,15 @@ The SQLite database lives at `data/buildboard.db` (override with `BUILDBOARD_DB`
 | DELETE | `/api/concepts/:id` | Delete a concept |
 | GET | `/api/search` | Full-text search (`?q=&limit=&source=`) |
 | GET | `/api/brief` | Compact context digest (~200 tokens) |
+| GET | `/api/agent-tasks` | List agent tasks |
+| POST | `/api/agent-tasks` | Spawn a subagent (`item_id` and/or `prompt`, `agent`, `model`) |
+| GET | `/api/agent-tasks/:id` | Get one agent task |
+| POST | `/api/agent-tasks/:id` | Cancel a running task |
+| GET | `/api/agent-tasks/:id/events` | SSE stream of the agent's output |
+
+The subagent runner shells out to `opencode run --format json --agent <agent> --dir <dir>`.
+The working directory defaults to the app's CWD; override with `BUILDBOARD_AGENT_DIR`.
+Permissions are never auto-approved — a running subagent behaves like an ordinary opencode agent.
 
 ## Scripts
 

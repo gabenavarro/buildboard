@@ -4,6 +4,7 @@
 	import ThreadTab from './ThreadTab.svelte';
 	import DecisionTab from './DecisionTab.svelte';
 	import ConceptTab from './ConceptTab.svelte';
+	import AgentTab from './AgentTab.svelte';
 
 	let {
 		item,
@@ -20,7 +21,7 @@
 	const KINDS: ItemKind[] = ['note', 'concept', 'task', 'plan', 'decision', 'agent_task'];
 	const STATUSES: ItemStatus[] = ['open', 'in_progress', 'done', 'blocked'];
 
-	type Tab = 'item' | 'thread' | 'decisions' | 'concept';
+	type Tab = 'item' | 'thread' | 'decisions' | 'concept' | 'agent';
 	let tab = $state<Tab>('item');
 
 	let title = $state(item.title);
@@ -56,7 +57,8 @@
 		{ id: 'item', label: 'Item', show: true },
 		{ id: 'thread', label: 'Thread', show: true },
 		{ id: 'decisions', label: 'Decisions', show: true },
-		{ id: 'concept', label: 'Concept', show: item.kind === 'concept' }
+		{ id: 'concept', label: 'Concept', show: item.kind === 'concept' },
+		{ id: 'agent', label: 'Agent', show: true }
 	];
 </script>
 
@@ -128,6 +130,10 @@
 	{:else if tab === 'concept'}
 		<div class="tabbody fill">
 			<ConceptTab item={item} />
+		</div>
+	{:else if tab === 'agent'}
+		<div class="tabbody scroll">
+			<AgentTab item={item} />
 		</div>
 	{/if}
 </aside>

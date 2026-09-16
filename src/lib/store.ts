@@ -9,7 +9,9 @@ import type {
 	MessageRole,
 	Decision,
 	DecisionStatus,
-	Concept
+	Concept,
+	AgentTask,
+	AgentTaskStatus
 } from './db.js';
 
 function parseTags(raw: string): string[] {
@@ -439,4 +441,39 @@ export function deleteConcept(id: string): boolean {
 	const db = getDb();
 	const res = db.prepare('DELETE FROM concepts WHERE id = ?').run(id);
 	return res.changes > 0;
+}
+
+// ---------- agent tasks ----------
+
+export function createAgentTask(input: {
+	item_id?: string | null;
+	prompt: string;
+	agent?: string | null;
+	model?: string | null;
+}): AgentTask {
+	const db = getDb();
+	const id = newId();
+	db.prepare(
+		`INSERT INTO agent_tasks (id, item_id, prompt, agent, model, status, started_at)
+		 VALUES (?, ?, ?, ?, ?, 'running', strftime('%Y-%m-%dT%H:%M:%fZ','now'))`
+	).run(id, input.item_id ?? null, input.prompt, input.agent ?? null, input.model ?? null);
+	return db.prepare('SELECT * FROM agent_tasks WHERE id = ?').get(id) as unknown as AgentTask;
+}
+
+export function listAgentTasks(limit = 50): AgentTask[] {
+	const db = getDb();
+	return db.prepare('SELECT * FROM agent_tasks ORDER BY created_at DESC LIMIT ?').all(limit) as unknown as AgentTask[];
+}
+
+export function getAgentTask(id: string): AgentTask | null {
+	const db = getDb();
+	const row = db.prepare('SELECT * FROM agent_tasks WHERE id = ?').get(id);
+	return row ? (row as unknown as AgentTask) : null;
+}
+
+export function finishAgentTask(id: string, status: AgentTaskStatus, transcript?: string | null): void {
+	const db = getDb();
+	db.prepare(
+		`UPDATE agent_tasks SET status = ?, transcript = COALESCE(?, transcript), finished_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`
+	).run(status, transcript ?? null, id);
 }

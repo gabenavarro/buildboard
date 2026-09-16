@@ -1,4 +1,4 @@
-import type { Item, Edge, ItemKind, ItemStatus, Thread, Message, Decision, Concept } from './db.js';
+import type { Item, Edge, ItemKind, ItemStatus, Thread, Message, Decision, Concept, AgentTask } from './db.js';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	const res = await fetch(path, {
@@ -64,7 +64,19 @@ export const api = {
 	}) => request<Concept>('/api/concepts', { method: 'POST', body: JSON.stringify(input) }),
 	updateConcept: (id: string, patch: Partial<Concept>) =>
 		request<Concept>(`/api/concepts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-	deleteConcept: (id: string) => request<{ ok: boolean }>(`/api/concepts/${id}`, { method: 'DELETE' })
+	deleteConcept: (id: string) => request<{ ok: boolean }>(`/api/concepts/${id}`, { method: 'DELETE' }),
+
+	listAgentTasks: (limit = 50) => request<AgentTask[]>(`/api/agent-tasks?limit=${limit}`),
+	getAgentTask: (id: string) => request<AgentTask>(`/api/agent-tasks/${id}`),
+	createAgentTask: (input: {
+		item_id?: string | null;
+		prompt?: string;
+		agent?: string;
+		model?: string;
+		instruction?: string;
+	}) =>
+		request<AgentTask>('/api/agent-tasks', { method: 'POST', body: JSON.stringify(input) }),
+	cancelAgentTask: (id: string) => request<{ ok: boolean }>(`/api/agent-tasks/${id}`, { method: 'POST' })
 };
 
-export type { Item, Edge, ItemKind, ItemStatus, Thread, Message, Decision, Concept };
+export type { Item, Edge, ItemKind, ItemStatus, Thread, Message, Decision, Concept, AgentTask };
