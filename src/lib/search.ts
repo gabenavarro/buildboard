@@ -11,8 +11,14 @@ export interface SearchHit {
 /**
  * Full-text search across items, decisions, concepts, and messages via FTS5.
  * Returns hits ranked by bm25 (lower is better), normalised into a positive score.
+ * When `board_id` is given, hits are restricted to that board: items filter
+ * directly; decisions/concepts join through their item; messages join through
+ * thread.item_id → items.board_id.
  */
-export function search(query: string, opts: { limit?: number; source?: SearchHit['source'] } = {}): SearchHit[] {
+export function search(
+	query: string,
+	opts: { limit?: number; source?: SearchHit['source']; board_id?: string } = {}
+): SearchHit[] {
 	const db = getDb();
 	const q = query.trim();
 	if (!q) return [];
@@ -26,11 +32,29 @@ export function search(query: string, opts: { limit?: number; source?: SearchHit
 		.map((t) => `"${t.replace(/"/g, '""')}"`)
 		.join(' OR ');
 
-	const tables: { source: SearchHit['source']; table: string; titleExpr: string; snipExpr: string }[] = [
-		{ source: 'item', table: 'fts_items', titleExpr: 'i.title', snipExpr: 'i.body_md' },
-		{ source: 'decision', table: 'fts_decisions', titleExpr: 'd.question', snipExpr: 'd.rationale' },
-		{ source: 'concept', table: 'fts_concepts', titleExpr: 'c.name', snipExpr: 'c.definition' },
-		{ source: 'message', table: 'fts_messages', titleExpr: 'm.content', snipExpr: 'm.content' }
+	const tables: { source: SearchHit['source']; table: string; titleExpr: string; snipExpr: string; boardClause: string }[] = [
+		{ source: 'item', table: 'fts_items', titleExpr: 'i.title', snipExpr: 'i.body_md', boardClause: 'AND i.board_id = ?' },
+		{
+			source: 'decision',
+			table: 'fts_decisions',
+			titleExpr: 'd.question',
+			snipExpr: 'd.rationale',
+			boardClause: 'AND d.item_id IN (SELECT id FROM items WHERE board_id = ?)'
+		},
+		{
+			source: 'concept',
+			table: 'fts_concepts',
+			titleExpr: 'c.name',
+			snipExpr: 'c.definition',
+			boardClause: 'AND c.item_id IN (SELECT id FROM items WHERE board_id = ?)'
+		},
+		{
+			source: 'message',
+			table: 'fts_messages',
+			titleExpr: 'm.content',
+			snipExpr: 'm.content',
+			boardClause: 'AND m.thread_id IN (SELECT id FROM threads WHERE item_id IN (SELECT id FROM items WHERE board_id = ?))'
+		}
 	];
 
 	const hits: SearchHit[] = [];
@@ -45,6 +69,8 @@ export function search(query: string, opts: { limit?: number; source?: SearchHit
 						? 'JOIN concepts c ON c.rowid = fts_concepts.rowid'
 						: 'JOIN messages m ON m.rowid = fts_messages.rowid';
 		const titleCol = t.source === 'item' ? 'i.id' : t.source === 'decision' ? 'd.id' : t.source === 'concept' ? 'c.id' : 'm.id';
+		const boardClause = opts.board_id ? t.boardClause : '';
+		const params = opts.board_id ? [ftsQuery, opts.board_id, limit] : [ftsQuery, limit];
 		try {
 			const rows = db
 				.prepare(
@@ -55,10 +81,11 @@ export function search(query: string, opts: { limit?: number; source?: SearchHit
 					FROM ${t.table}
 					${join}
 					WHERE ${t.table} MATCH ?
+					${boardClause}
 					ORDER BY score
 					LIMIT ?`
 				)
-				.all(ftsQuery, limit) as { id: string; title: string; snippet: string; score: number }[];
+				.all(...params) as { id: string; title: string; snippet: string; score: number }[];
 			for (const r of rows) {
 				hits.push({ source: t.source, id: r.id, title: r.title, snippet: r.snippet, score: -r.score });
 			}

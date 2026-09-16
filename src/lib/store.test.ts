@@ -323,6 +323,31 @@ describe('messages store', () => {
 	});
 });
 
+describe('listAgentTasks filters', () => {
+	it('filters by item_id and status', async () => {
+		const { createItem, createAgentTask, listAgentTasks } = await import('../lib/store.js');
+		const a = createItem({ title: 'a' });
+		const b = createItem({ title: 'b' });
+		const running = createAgentTask({ item_id: a.id, prompt: 'run' });
+		const done = createAgentTask({ item_id: a.id, prompt: 'done one' });
+		const other = createAgentTask({ item_id: b.id, prompt: 'other' });
+		const { finishAgentTask } = await import('../lib/store.js');
+		finishAgentTask(done.id, 'succeeded');
+
+		expect(listAgentTasks()).toHaveLength(3);
+		expect(listAgentTasks(50, { item_id: a.id }).map((t) => t.id)).toEqual([running.id, done.id].sort());
+		expect(listAgentTasks(50, { status: 'succeeded' }).map((t) => t.id)).toEqual([done.id]);
+		expect(listAgentTasks(50, { item_id: a.id, status: 'running' }).map((t) => t.id)).toEqual([running.id]);
+		expect(listAgentTasks(50, { item_id: a.id, status: 'succeeded' }).map((t) => t.id)).toEqual([done.id]);
+		// limit still applies with filters
+		expect(listAgentTasks(1, { item_id: a.id })).toHaveLength(1);
+		expect(listAgentTasks(1, { item_id: 'missing' })).toEqual([]);
+		expect(listAgentTasks(10, { status: 'canceled' })).toEqual([]);
+		// unrelated task untouched by filters
+		expect(listAgentTasks(50, { item_id: b.id }).map((t) => t.id)).toEqual([other.id]);
+	});
+});
+
 describe('decision uniqueness', () => {
 	it('rejects a second active decision with the same (item_id, question)', async () => {
 		const { createItem, createDecision } = await import('../lib/store.js');

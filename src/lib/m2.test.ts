@@ -91,6 +91,44 @@ describe('search (FTS5)', () => {
 		updateItem(item.id, { title: 'renamed thing' });
 		expect(search('quantum').some((h) => h.source === 'item')).toBe(false);
 	});
+
+	it('scopes hits to a single board via board_id', async () => {
+		const { createItem, createBoard, createDecision, createConcept, createThread, createMessage } =
+			await import('../lib/store.js');
+		const { search } = await import('../lib/search.js');
+
+		const side = createBoard('Side');
+		const defaultItem = createItem({ title: 'quantum default note', body_md: 'quantum on the main board' });
+		const sideItem = createItem({ title: 'quantum side note', board_id: side.id });
+		createDecision({ item_id: defaultItem.id, question: 'quantum default question' });
+		createDecision({ item_id: sideItem.id, question: 'quantum side question' });
+		createConcept({ name: 'quantum default concept', item_id: defaultItem.id });
+		createConcept({ name: 'quantum side concept', item_id: sideItem.id });
+		const defaultThread = createThread('default thread', defaultItem.id);
+		const sideThread = createThread('side thread', sideItem.id);
+		createMessage({ thread_id: defaultThread.id, content: 'quantum default message' });
+		createMessage({ thread_id: sideThread.id, content: 'quantum side message' });
+
+		const all = new Set(search('quantum').map((h) => h.id));
+		expect(all.has(defaultItem.id)).toBe(true);
+		expect(all.has(sideItem.id)).toBe(true);
+
+		const sideHits = search('quantum', { board_id: side.id });
+		const sideIds = new Set(sideHits.map((h) => h.id));
+		expect(sideIds.has(sideItem.id)).toBe(true);
+		expect(sideIds.has(defaultItem.id)).toBe(false);
+
+		// every source type is scoped through its item/board context
+		const sideSources = new Set(sideHits.map((h) => h.source));
+		expect(sideSources.has('item')).toBe(true);
+		expect(sideSources.has('decision')).toBe(true);
+		expect(sideSources.has('concept')).toBe(true);
+		expect(sideSources.has('message')).toBe(true);
+
+		const defaultHits = search('quantum', { board_id: 'default' });
+		expect(defaultHits.map((h) => h.id)).toContain(defaultItem.id);
+		expect(defaultHits.map((h) => h.id)).not.toContain(sideItem.id);
+	});
 });
 
 	describe('brief (digest)', () => {
