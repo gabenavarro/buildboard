@@ -64,3 +64,16 @@ textarea:focus {
 	outline: none;
 	border-color: var(--accent);
 }
+
+.st-open {
+	color: var(--text-dim);
+}
+.st-progress {
+	color: var(--accent);
+}
+.st-done {
+	color: var(--kind-plan);
+}
+.st-blocked {
+	color: var(--danger);
+}

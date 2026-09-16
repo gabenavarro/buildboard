@@ -1,9 +1,33 @@
 <script lang="ts">
 	import { Handle, Position } from '@xyflow/svelte';
+	import { getContext } from 'svelte';
 	import type { Item, ItemKind, ItemStatus } from '$lib/db.js';
+	import { ITEM_STATUSES } from '$lib/db.js';
+	import { api } from '$lib/api.js';
 
 	let { data } = $props();
 	const item = $derived(data as Item);
+	const onstatus = getContext<((item: Item) => void) | undefined>('board:statuschange');
+
+	function cycleStatus(e: MouseEvent) {
+		e.stopPropagation();
+		e.preventDefault();
+		const next = ITEM_STATUSES[(ITEM_STATUSES.indexOf(item.status) + 1) % ITEM_STATUSES.length];
+		api
+			.updateItem(item.id, { status: next })
+			.then((updated) => onstatus?.(updated))
+			.catch((err) => console.error(err));
+	}
+
+	function statusClass(status: ItemStatus): string {
+		const map: Record<ItemStatus, string> = {
+			open: 'st-open',
+			in_progress: 'st-progress',
+			done: 'st-done',
+			blocked: 'st-blocked'
+		};
+		return map[status];
+	}
 
 	const kindColor = (kind: ItemKind) => {
 		const map: Record<ItemKind, string> = {
@@ -28,7 +52,10 @@
 	};
 </script>
 
-<div class="card" style="--kind: {kindColor(item.kind)}">
+<div
+	class="card {item.status === 'done' ? 'is-done' : ''} {item.status === 'blocked' ? 'is-blocked' : ''}"
+	style="--kind: {kindColor(item.kind)}"
+>
 	<Handle type="target" position={Position.Top} />
 	<Handle type="target" position={Position.Left} />
 	<Handle type="source" position={Position.Right} />
@@ -36,7 +63,14 @@
 
 	<div class="head">
 		<span class="badge" style="background: {kindColor(item.kind)}">{item.kind}</span>
-		<span class="status" title={item.status}>{statusIcon(item.status)}</span>
+		<button
+			class="status {statusClass(item.status)}"
+			title={item.status}
+			aria-label={`Status: ${item.status}. Click to cycle.`}
+			onclick={cycleStatus}
+		>
+			{statusIcon(item.status)}
+		</button>
 	</div>
 	<div class="title">{item.title}</div>
 	{#if item.tags.length > 0}
@@ -58,6 +92,16 @@
 		padding: 10px 12px;
 		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 	}
+	.card.is-done {
+		opacity: 0.6;
+	}
+	.card.is-done .title {
+		text-decoration: line-through;
+		color: var(--text-dim);
+	}
+	.card.is-blocked {
+		border-color: var(--danger);
+	}
 	.head {
 		display: flex;
 		justify-content: space-between;
@@ -74,8 +118,15 @@
 		padding: 2px 6px;
 	}
 	.status {
-		color: var(--text-dim);
+		background: transparent;
+		border: none;
+		border-radius: 4px;
+		padding: 2px 4px;
 		font-size: 14px;
+		line-height: 1;
+	}
+	.status:hover {
+		background: var(--accent-soft);
 	}
 	.title {
 		font-weight: 600;
