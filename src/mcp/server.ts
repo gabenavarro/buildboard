@@ -36,6 +36,10 @@ function fail(message: string) {
 	return { content: [{ type: 'text' as const, text: `error: ${message}` }], isError: true };
 }
 
+function isUniqueViolation(e: unknown): boolean {
+	return e instanceof Error && /UNIQUE constraint failed/i.test(e.message);
+}
+
 server.registerTool(
 	'bb_brief',
 	{
@@ -131,7 +135,12 @@ server.registerTool(
 	({ from_id, to_id, kind, label }) => {
 		if (!getItem(from_id)) return fail(`no item with id ${from_id}`);
 		if (!getItem(to_id)) return fail(`no item with id ${to_id}`);
-		return text(createEdge({ from_id, to_id, kind, label }));
+		try {
+			return text(createEdge({ from_id, to_id, kind, label }));
+		} catch (e) {
+			if (isUniqueViolation(e)) return fail('edge already exists');
+			throw e;
+		}
 	}
 );
 
@@ -151,7 +160,12 @@ server.registerTool(
 	},
 	({ item_id, question, options, choice, rationale }) => {
 		if (item_id && !getItem(item_id)) return fail(`no item with id ${item_id}`);
-		return text(createDecision({ item_id, question, options, choice, rationale }));
+		try {
+			return text(createDecision({ item_id, question, options, choice, rationale }));
+		} catch (e) {
+			if (isUniqueViolation(e)) return fail('decision already exists');
+			throw e;
+		}
 	}
 );
 

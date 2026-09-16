@@ -144,7 +144,7 @@ export function getDb(): DatabaseSync {
 	return db;
 }
 
-const MIGRATIONS = [
+export const MIGRATIONS = [
 	`CREATE TABLE IF NOT EXISTS items (
 		id TEXT PRIMARY KEY,
 		kind TEXT NOT NULL DEFAULT 'note' CHECK (kind IN ('note','concept','task','plan','decision','agent_task')),
@@ -275,7 +275,17 @@ const MIGRATIONS = [
 	`ALTER TABLE items ADD COLUMN board_id TEXT NOT NULL DEFAULT 'default'`,
 	`ALTER TABLE edges ADD COLUMN board_id TEXT NOT NULL DEFAULT 'default'`,
 	`CREATE INDEX IF NOT EXISTS idx_items_board ON items(board_id)`,
-	`CREATE INDEX IF NOT EXISTS idx_edges_board ON edges(board_id)`
+	`CREATE INDEX IF NOT EXISTS idx_edges_board ON edges(board_id)`,
+	// Per-item hot-path indexes
+	`CREATE INDEX IF NOT EXISTS idx_threads_item ON threads(item_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_decisions_item ON decisions(item_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_concepts_item ON concepts(item_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_agent_tasks_item ON agent_tasks(item_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_items_kind ON items(kind)`,
+	`CREATE INDEX IF NOT EXISTS idx_items_status ON items(status)`,
+	// Integrity guards: one active decision per (item, question); no duplicate edges
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_decisions_active ON decisions(item_id, question) WHERE status = 'active' AND item_id IS NOT NULL`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_unique ON edges(from_id, to_id, kind)`
 ];
 
 const MIGRATION_NAMES = MIGRATIONS.map((_, i) => `m${String(i).padStart(3, '0')}`);
