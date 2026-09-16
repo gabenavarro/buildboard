@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -104,8 +104,32 @@ export function newId(): string {
 
 let db: DatabaseSync | null = null;
 
+/**
+ * Walk up from `startDir` to the nearest directory containing a package.json.
+ * Returns the starting directory itself if no package.json is found above it.
+ */
+export function findRepoRoot(startDir: string): string {
+	let dir = startDir;
+	for (;;) {
+		if (existsSync(path.join(dir, 'package.json'))) return dir;
+		const parent = path.dirname(dir);
+		if (parent === dir) return dir;
+		dir = parent;
+	}
+}
+
+/**
+ * Resolve the buildboard repo root from this module's own location so the
+ * result is stable regardless of process.cwd(). Works both in the SvelteKit
+ * app (src/lib) and in the esbuild MCP bundle (dist/mcp/server.mjs).
+ */
+export function repoRoot(): string {
+	const start = import.meta.dirname ?? process.cwd();
+	return findRepoRoot(start);
+}
+
 export function dbPath(): string {
-	return process.env.BUILDBOARD_DB ?? path.join(process.cwd(), 'data', 'buildboard.db');
+	return process.env.BUILDBOARD_DB ?? path.join(repoRoot(), 'data', 'buildboard.db');
 }
 
 export function getDb(): DatabaseSync {

@@ -32,7 +32,8 @@ npm run build
 node build/index.js
 ```
 
-The SQLite database lives at `data/buildboard.db` (override with `BUILDBOARD_DB`).
+The SQLite database lives at `data/buildboard.db` relative to the buildboard repo root
+(override with `BUILDBOARD_DB`).
 
 ## API (v1)
 
@@ -75,7 +76,8 @@ Item/edge endpoints accept `?board=<id>` to scope to a board (default `default`)
 | GET | `/api/agent-tasks/:id/events` | SSE stream of the agent's output |
 
 The subagent runner shells out to `opencode run --format json --agent <agent> --dir <dir>`.
-The working directory defaults to the app's CWD; override with `BUILDBOARD_AGENT_DIR`.
+The working directory defaults to the buildboard repo root (resolved from the app's own
+location, not `process.cwd()`); override with `BUILDBOARD_AGENT_DIR`.
 Permissions are never auto-approved — a running subagent behaves like an ordinary opencode agent.
 
 ## Usage
@@ -114,7 +116,10 @@ Register it in your `opencode.json` (or the project's `opencode.json`):
 ```
 
 The server uses the same `data/buildboard.db` as the app (override with `BUILDBOARD_DB`),
-so anything written through MCP shows up on the board immediately.
+so anything written through MCP shows up on the board immediately. Paths resolve from the
+buildboard repo root (found by walking up from the bundle's own location), not the invoking
+directory, so spawning `dist/mcp/server.mjs` from any working directory keeps a single
+database.
 
 ## Scripts
 
