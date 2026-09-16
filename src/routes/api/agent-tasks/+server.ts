@@ -7,7 +7,8 @@ import { json, badRequest, notFound, handle, readJson } from '../_util.js';
 
 export const GET: RequestHandler = handle(async ({ url }) => {
 	const limit = Number(url.searchParams.get('limit') ?? '50');
-	return json(listAgentTasks(limit));
+	const item_id = url.searchParams.get('item_id') ?? undefined;
+	return json(listAgentTasks(limit, item_id ? { item_id } : {}));
 });
 
 export const POST: RequestHandler = handle(async ({ request }) => {
