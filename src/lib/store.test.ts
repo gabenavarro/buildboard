@@ -46,6 +46,49 @@ describe('items store', () => {
 		expect(getItem(item.id)).toBeNull();
 	});
 
+	it('deletes an item together with its threads, messages, decisions, agent tasks, and edges — concepts survive', async () => {
+		const {
+			createItem,
+			deleteItem,
+			getItem,
+			createThread,
+			getThread,
+			createMessage,
+			listMessages,
+			createDecision,
+			getDecision,
+			createAgentTask,
+			listAgentTasks,
+			createConcept,
+			getConcept,
+			createEdge,
+			listEdges
+		} = await import('../lib/store.js');
+		const item = createItem({ title: 'anchor' });
+		const other = createItem({ title: 'other' });
+		const thread = createThread('Discussion', item.id);
+		createMessage({ thread_id: thread.id, content: 'first message' });
+		createMessage({ thread_id: thread.id, content: 'second message' });
+		const decision = createDecision({ item_id: item.id, question: 'Which path?', options: ['A', 'B'], choice: 'A' });
+		const task = createAgentTask({ item_id: item.id, prompt: 'do the thing' });
+		const concept = createConcept({ name: 'surviving-concept', item_id: item.id });
+		const edge = createEdge({ from_id: item.id, to_id: other.id, label: 'feeds' });
+
+		expect(deleteItem(item.id)).toBe(true);
+
+		expect(getItem(item.id)).toBeNull();
+		expect(getThread(thread.id)).toBeNull();
+		expect(listMessages(thread.id)).toHaveLength(0);
+		expect(getDecision(decision.id)).toBeNull();
+		expect(listAgentTasks().some((t) => t.id === task.id)).toBe(false);
+		expect(listEdges().some((e) => e.id === edge.id)).toBe(false);
+		const surviving = getConcept(concept.id);
+		expect(surviving).not.toBeNull();
+		expect(surviving?.item_id).toBeNull();
+		// unrelated item untouched
+		expect(getItem(other.id)).not.toBeNull();
+	});
+
 	it('rejects invalid input', async () => {
 		const { validateCreateItem } = await import('../lib/store.js');
 		expect(validateCreateItem({}).ok).toBe(false);
