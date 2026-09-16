@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Handle, Position } from '@xyflow/svelte';
 	import { getContext } from 'svelte';
-	import type { Item, ItemKind, ItemStatus } from '$lib/db.js';
-	import { ITEM_STATUSES } from '$lib/db.js';
+	import type { Item, ItemKind, ItemStatus } from '$lib/types.js';
+	import { ITEM_STATUSES } from '$lib/types.js';
 	import { api } from '$lib/api.js';
 
 	let { data } = $props();

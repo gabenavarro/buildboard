@@ -10,7 +10,7 @@ import type {
 	AgentTask,
 	Board,
 	BoardWithCount
-} from './db.js';
+} from './types.js';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	const res = await fetch(path, {
