@@ -15,6 +15,23 @@ import type {
 	Board
 } from './db.js';
 
+/**
+ * Expected store failure carrying an HTTP status. Thrown by store
+ * validation (existence, duplicates, enums) and mapped to a JSON error
+ * response by the API layer. The MCP server surfaces it as a plain error.
+ */
+export class StoreError extends Error {
+	readonly status: number;
+
+	constructor(status: number, message: string) {
+		super(message);
+		this.name = 'StoreError';
+		this.status = status;
+	}
+}
+
+const DECISION_STATUSES: DecisionStatus[] = ['active', 'superseded'];
+
 function parseTags(raw: string): string[] {
 	try {
 		const v = JSON.parse(raw);
@@ -93,6 +110,12 @@ export function validateCreateItem(input: Record<string, unknown>): { ok: true; 
 
 export function createItem(input: CreateItemInput): Item {
 	const db = getDb();
+	if (input.parent_id && !getItem(input.parent_id)) {
+		throw new StoreError(404, `parent item not found: ${input.parent_id}`);
+	}
+	if (input.board_id && !getBoard(input.board_id)) {
+		throw new StoreError(404, `board not found: ${input.board_id}`);
+	}
 	const id = newId();
 	db.prepare(
 		`INSERT INTO items (id, kind, title, body_md, x, y, w, h, status, tags, parent_id, board_id)
@@ -158,7 +181,9 @@ export function updateItem(id: string, patch: Record<string, unknown>): Item | n
 
 	const fields: Record<string, string | number | null> = {};
 	if (typeof patch.kind === 'string') {
-		if (!ITEM_KINDS.includes(patch.kind as ItemKind)) throw new Error(`invalid kind: ${patch.kind}`);
+		if (!ITEM_KINDS.includes(patch.kind as ItemKind)) {
+			throw new StoreError(400, `invalid kind: ${patch.kind} (must be one of: ${ITEM_KINDS.join(', ')})`);
+		}
 		fields.kind = patch.kind;
 	}
 	if (typeof patch.title === 'string') fields.title = patch.title;
@@ -168,13 +193,20 @@ export function updateItem(id: string, patch: Record<string, unknown>): Item | n
 	if (patch.w === null || typeof patch.w === 'number') fields.w = patch.w;
 	if (patch.h === null || typeof patch.h === 'number') fields.h = patch.h;
 	if (typeof patch.status === 'string') {
-		if (!ITEM_STATUSES.includes(patch.status as ItemStatus)) throw new Error(`invalid status: ${patch.status}`);
+		if (!ITEM_STATUSES.includes(patch.status as ItemStatus)) {
+			throw new StoreError(400, `invalid status: ${patch.status} (must be one of: ${ITEM_STATUSES.join(', ')})`);
+		}
 		fields.status = patch.status;
 	}
 	if (Array.isArray(patch.tags)) {
 		fields.tags = JSON.stringify(patch.tags.filter((t) => typeof t === 'string'));
 	}
-	if (patch.parent_id === null || typeof patch.parent_id === 'string') fields.parent_id = patch.parent_id;
+	if (patch.parent_id === null || typeof patch.parent_id === 'string') {
+		if (typeof patch.parent_id === 'string' && !getItem(patch.parent_id)) {
+			throw new StoreError(404, `parent item not found: ${patch.parent_id}`);
+		}
+		fields.parent_id = patch.parent_id;
+	}
 
 	if (Object.keys(fields).length === 0) return existing;
 
@@ -200,6 +232,8 @@ export interface CreateEdgeInput {
 
 export function createEdge(input: CreateEdgeInput): Edge {
 	const db = getDb();
+	if (!getItem(input.from_id)) throw new StoreError(404, `from item not found: ${input.from_id}`);
+	if (!getItem(input.to_id)) throw new StoreError(404, `to item not found: ${input.to_id}`);
 	const id = newId();
 	db.prepare('INSERT INTO edges (id, from_id, to_id, kind, label, board_id) VALUES (?, ?, ?, ?, ?, ?)').run(
 		id,
@@ -232,6 +266,7 @@ export function deleteEdge(id: string): boolean {
 
 export function createThread(title: string, item_id: string | null = null): Thread {
 	const db = getDb();
+	if (item_id && !getItem(item_id)) throw new StoreError(404, `item not found: ${item_id}`);
 	const id = newId();
 	db.prepare('INSERT INTO threads (id, title, item_id) VALUES (?, ?, ?)').run(id, title, item_id);
 	return db.prepare('SELECT * FROM threads WHERE id = ?').get(id) as unknown as Thread;
@@ -314,6 +349,9 @@ export interface CreateDecisionInput {
 
 export function createDecision(input: CreateDecisionInput): Decision {
 	const db = getDb();
+	if (input.item_id && !getItem(input.item_id)) {
+		throw new StoreError(404, `item not found: ${input.item_id}`);
+	}
 	const id = newId();
 	db.prepare(
 		`INSERT INTO decisions (id, item_id, question, options, choice, rationale) VALUES (?, ?, ?, ?, ?, ?)`
@@ -379,7 +417,15 @@ export function updateDecision(id: string, patch: Record<string, unknown>): Deci
 	if (Array.isArray(patch.options)) fields.options = JSON.stringify(patch.options);
 	if (patch.choice === null || typeof patch.choice === 'string') fields.choice = patch.choice;
 	if (typeof patch.rationale === 'string') fields.rationale = patch.rationale;
-	if (typeof patch.status === 'string') fields.status = patch.status;
+	if (typeof patch.status === 'string') {
+		if (!DECISION_STATUSES.includes(patch.status as DecisionStatus)) {
+			throw new StoreError(
+				400,
+				`invalid status: ${patch.status} (must be one of: ${DECISION_STATUSES.join(', ')})`
+			);
+		}
+		fields.status = patch.status;
+	}
 	if (Object.keys(fields).length === 0) return getDecision(id);
 	const sets = Object.keys(fields).map((k) => `${k} = ?`);
 	db.prepare(`UPDATE decisions SET ${sets.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(
@@ -407,6 +453,9 @@ export interface CreateConceptInput {
 
 export function createConcept(input: CreateConceptInput): Concept {
 	const db = getDb();
+	if (input.item_id && !getItem(input.item_id)) {
+		throw new StoreError(404, `item not found: ${input.item_id}`);
+	}
 	const id = newId();
 	db.prepare(
 		`INSERT INTO concepts (id, name, definition, details_md, source, item_id) VALUES (?, ?, ?, ?, ?, ?)`
@@ -442,7 +491,12 @@ export function updateConcept(id: string, patch: Record<string, unknown>): Conce
 	const db = getDb();
 	if (!getConcept(id)) return null;
 	const fields: Record<string, string | number | null> = {};
-	if (typeof patch.name === 'string') fields.name = patch.name;
+	if (typeof patch.name === 'string') {
+		if (listConcepts().some((c) => c.name === patch.name && c.id !== id)) {
+			throw new StoreError(409, `concept name already exists: ${patch.name}`);
+		}
+		fields.name = patch.name;
+	}
 	if (typeof patch.definition === 'string') fields.definition = patch.definition;
 	if (typeof patch.details_md === 'string') fields.details_md = patch.details_md;
 	if (patch.source === null || typeof patch.source === 'string') fields.source = patch.source;
@@ -511,6 +565,9 @@ export function getBoard(id: string): Board | null {
 
 export function createBoard(name: string): Board {
 	const db = getDb();
+	if (listBoards().some((b) => b.name === name)) {
+		throw new StoreError(409, `board name already exists: ${name}`);
+	}
 	const id = `b_${newId().slice(0, 8)}`;
 	db.prepare('INSERT INTO boards (id, name) VALUES (?, ?)').run(id, name);
 	return getBoard(id)!;
@@ -519,6 +576,9 @@ export function createBoard(name: string): Board {
 export function renameBoard(id: string, name: string): Board | null {
 	const db = getDb();
 	if (!getBoard(id)) return null;
+	if (listBoards().some((b) => b.id !== id && b.name === name)) {
+		throw new StoreError(409, `board name already exists: ${name}`);
+	}
 	db.prepare('UPDATE boards SET name = ? WHERE id = ?').run(name, id);
 	return getBoard(id);
 }
