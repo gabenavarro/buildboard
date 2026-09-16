@@ -111,4 +111,40 @@ describe('edges store', () => {
 		deleteItem(a.id);
 		expect(listEdges().some((e) => e.id === edge2.id)).toBe(false);
 	});
+
+	it('rejects a second edge with the same (from_id, to_id, kind)', async () => {
+		const { createItem, createEdge } = await import('../lib/store.js');
+		const a = createItem({ title: 'a' });
+		const b = createItem({ title: 'b' });
+		createEdge({ from_id: a.id, to_id: b.id });
+		expect(() => createEdge({ from_id: a.id, to_id: b.id })).toThrow(/UNIQUE constraint failed/);
+		// a different kind for the same pair is allowed
+		const other = createEdge({ from_id: a.id, to_id: b.id, kind: 'relates_to' });
+		expect(other.kind).toBe('relates_to');
+	});
+});
+
+describe('decision uniqueness', () => {
+	it('rejects a second active decision with the same (item_id, question)', async () => {
+		const { createItem, createDecision } = await import('../lib/store.js');
+		const item = createItem({ title: 'anchor' });
+		createDecision({ item_id: item.id, question: 'Which path?', choice: 'A' });
+		expect(() => createDecision({ item_id: item.id, question: 'Which path?', choice: 'B' })).toThrow(
+			/UNIQUE constraint failed/
+		);
+		// a different question for the same item is allowed
+		const other = createDecision({ item_id: item.id, question: 'Which color?', choice: 'red' });
+		expect(other.question).toBe('Which color?');
+	});
+
+	it('allows a superseded decision with the same question, followed by a new active one', async () => {
+		const { createItem, createDecision, updateDecision, getDecision } = await import('../lib/store.js');
+		const item = createItem({ title: 'anchor' });
+		const first = createDecision({ item_id: item.id, question: 'Which path?', choice: 'A' });
+		updateDecision(first.id, { status: 'superseded' });
+		expect(getDecision(first.id)?.status).toBe('superseded');
+		const second = createDecision({ item_id: item.id, question: 'Which path?', choice: 'B' });
+		expect(second.status).toBe('active');
+		expect(second.choice).toBe('B');
+	});
 });
