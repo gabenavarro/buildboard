@@ -122,6 +122,98 @@ describe('edges store', () => {
 		const other = createEdge({ from_id: a.id, to_id: b.id, kind: 'relates_to' });
 		expect(other.kind).toBe('relates_to');
 	});
+
+	it('gets and updates an edge (kind/label/ends)', async () => {
+		const { createItem, createEdge, getEdge, updateEdge, getItem } = await import('../lib/store.js');
+		const a = createItem({ title: 'a' });
+		const b = createItem({ title: 'b' });
+		const c = createItem({ title: 'c' });
+		const edge = createEdge({ from_id: a.id, to_id: b.id, kind: 'depends_on', label: 'needs' });
+
+		expect(getEdge(edge.id)).toEqual(edge);
+		expect(getEdge('missing')).toBeNull();
+
+		const updated = updateEdge(edge.id, { kind: 'blocks', label: 'stops' });
+		expect(updated?.kind).toBe('blocks');
+		expect(updated?.label).toBe('stops');
+		expect(updated?.from_id).toBe(a.id);
+		expect(updated?.to_id).toBe(b.id);
+		expect(getEdge(edge.id)?.kind).toBe('blocks');
+
+		const moved = updateEdge(edge.id, { from_id: c.id });
+		expect(moved?.from_id).toBe(c.id);
+		expect(moved?.to_id).toBe(b.id);
+		expect(moved?.kind).toBe('blocks');
+		expect(getItem(a.id)).not.toBeNull();
+	});
+
+	it('updateEdge validates and returns null for a missing edge', async () => {
+		const { createItem, createEdge, updateEdge, StoreError } = await import('../lib/store.js');
+		const a = createItem({ title: 'a' });
+		const b = createItem({ title: 'b' });
+		const edge = createEdge({ from_id: a.id, to_id: b.id });
+
+		expect(updateEdge('missing', { label: 'x' })).toBeNull();
+		expect(() => updateEdge(edge.id, { kind: '' })).toThrow(StoreError);
+		expect(() => updateEdge(edge.id, { kind: 42 })).toThrow(StoreError);
+		expect(() => updateEdge(edge.id, { from_id: 'missing' })).toThrow(/from item not found/);
+		expect(() => updateEdge(edge.id, { to_id: 'missing' })).toThrow(/to item not found/);
+	});
+
+	it('updateEdge colliding with the unique (from_id, to_id, kind) index throws a UNIQUE constraint error', async () => {
+		const { createItem, createEdge, updateEdge } = await import('../lib/store.js');
+		const a = createItem({ title: 'a' });
+		const b = createItem({ title: 'b' });
+		const first = createEdge({ from_id: a.id, to_id: b.id });
+		const second = createEdge({ from_id: a.id, to_id: b.id, kind: 'relates_to' });
+
+		expect(() => updateEdge(second.id, { kind: 'depends_on' })).toThrow(
+			/UNIQUE constraint failed/
+		);
+		// first edge untouched
+		expect((await import('../lib/store.js')).getEdge(first.id)?.kind).toBe('depends_on');
+	});
+});
+
+describe('messages store', () => {
+	it('deletes a message and keeps the FTS index consistent', async () => {
+		const { createThread, createMessage, listMessages, deleteMessage } =
+			await import('../lib/store.js');
+		const { search } = await import('../lib/search.js');
+		const thread = createThread('t');
+		const keep = createMessage({ thread_id: thread.id, content: 'quantum flibber kept' });
+		const gone = createMessage({ thread_id: thread.id, content: 'quantum flibber deleted' });
+
+		expect(listMessages(thread.id)).toHaveLength(2);
+		expect(search('flibber', { source: 'message' }).map((h) => h.id)).toContain(gone.id);
+
+		expect(deleteMessage(thread.id, gone.id)).toBe(true);
+		expect(deleteMessage(thread.id, 'missing')).toBe(false);
+
+		expect(listMessages(thread.id).map((m) => m.id)).toEqual([keep.id]);
+		expect(search('flibber', { source: 'message' }).map((h) => h.id)).not.toContain(gone.id);
+	});
+
+	it('paginates same-created_at messages by rowid without skips or duplicates', async () => {
+		const { getDb } = await import('../lib/db.js');
+		const { createThread, createMessage, listMessages } = await import('../lib/store.js');
+		const db = getDb();
+		const thread = createThread('t');
+		const m1 = createMessage({ thread_id: thread.id, content: 'one' });
+		const m2 = createMessage({ thread_id: thread.id, content: 'two' });
+		const m3 = createMessage({ thread_id: thread.id, content: 'three' });
+		// force identical millisecond timestamps (the tie case the old cursor broke on)
+		db.prepare('UPDATE messages SET created_at = ? WHERE thread_id = ?').run(
+			'2026-01-01T00:00:00.000Z',
+			thread.id
+		);
+
+		expect(listMessages(thread.id).map((m) => m.id)).toEqual([m1.id, m2.id, m3.id]);
+		// old scheme: created_at < created_at(cursor) excluded ties, so page 2 was empty
+		expect(listMessages(thread.id, 1, m3.id).map((m) => m.id)).toEqual([m2.id]);
+		expect(listMessages(thread.id, 1, m2.id).map((m) => m.id)).toEqual([m1.id]);
+		expect(listMessages(thread.id, 1, m1.id)).toEqual([]);
+	});
 });
 
 describe('decision uniqueness', () => {

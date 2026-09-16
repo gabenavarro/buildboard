@@ -273,6 +273,55 @@ export function listEdges(board_id?: string): Edge[] {
 	return db.prepare('SELECT * FROM edges ORDER BY created_at').all() as unknown as Edge[];
 }
 
+export function getEdge(id: string): Edge | null {
+	const db = getDb();
+	const row = db.prepare('SELECT * FROM edges WHERE id = ?').get(id);
+	return row ? (row as unknown as Edge) : null;
+}
+
+/**
+ * Patch an edge. `kind` must be a non-empty string when provided (400);
+ * `from_id`/`to_id` must reference existing items when provided (404).
+ * A patch that collides with the unique (from_id, to_id, kind) index throws
+ * the raw SQLite UNIQUE constraint error, which the API layer maps to 409.
+ */
+export function updateEdge(id: string, patch: Record<string, unknown>): Edge | null {
+	const db = getDb();
+	const existing = getEdge(id);
+	if (!existing) return null;
+
+	const fields: Record<string, string> = {};
+	if (patch.kind !== undefined) {
+		if (typeof patch.kind !== 'string' || patch.kind.trim() === '') {
+			throw new StoreError(400, 'invalid kind: must be a non-empty string');
+		}
+		fields.kind = patch.kind;
+	}
+	if (patch.label !== undefined) {
+		if (typeof patch.label !== 'string') {
+			throw new StoreError(400, 'label must be a string');
+		}
+		fields.label = patch.label;
+	}
+	if (patch.from_id !== undefined) {
+		if (typeof patch.from_id !== 'string' || !getItem(patch.from_id)) {
+			throw new StoreError(404, `from item not found: ${patch.from_id}`);
+		}
+		fields.from_id = patch.from_id;
+	}
+	if (patch.to_id !== undefined) {
+		if (typeof patch.to_id !== 'string' || !getItem(patch.to_id)) {
+			throw new StoreError(404, `to item not found: ${patch.to_id}`);
+		}
+		fields.to_id = patch.to_id;
+	}
+
+	if (Object.keys(fields).length === 0) return existing;
+	const sets = Object.keys(fields).map((k) => `${k} = ?`);
+	db.prepare(`UPDATE edges SET ${sets.join(', ')} WHERE id = ?`).run(...Object.values(fields), id);
+	return getEdge(id);
+}
+
 export function deleteEdge(id: string): boolean {
 	const db = getDb();
 	const res = db.prepare('DELETE FROM edges WHERE id = ?').run(id);
@@ -335,23 +384,40 @@ export function createMessage(input: CreateMessageInput): Message {
 	return db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as unknown as Message;
 }
 
+/**
+ * List a thread's messages, oldest first, with cursor pagination.
+ * The cursor is rowid-based (monotonic insert order) rather than
+ * created_at-based, so messages created in the same millisecond cannot be
+ * skipped, duplicated, or reordered across pages. An unknown `before_id`
+ * yields an empty list.
+ */
 export function listMessages(thread_id: string, limit = 200, before_id?: string): Message[] {
 	const db = getDb();
 	let rows: unknown[];
 	if (before_id) {
+		const anchor = db
+			.prepare('SELECT rowid FROM messages WHERE thread_id = ? AND id = ?')
+			.get(thread_id, before_id) as { rowid: number } | undefined;
+		if (!anchor) return [];
 		rows = db
-			.prepare(
-				`SELECT * FROM messages WHERE thread_id = ? AND created_at < (SELECT created_at FROM messages WHERE id = ?)
-				 ORDER BY created_at DESC LIMIT ?`
-			)
-			.all(thread_id, before_id, limit) as unknown[];
+			.prepare('SELECT * FROM messages WHERE thread_id = ? AND rowid < ? ORDER BY rowid DESC LIMIT ?')
+			.all(thread_id, anchor.rowid, limit) as unknown[];
 	} else {
-		rows = db.prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY created_at DESC LIMIT ?').all(
+		rows = db.prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY rowid DESC LIMIT ?').all(
 			thread_id,
 			limit
 		) as unknown[];
 	}
 	return (rows as unknown as Message[]).reverse();
+}
+
+export function deleteMessage(thread_id: string, message_id: string): boolean {
+	const db = getDb();
+	const res = db.prepare('DELETE FROM messages WHERE thread_id = ? AND id = ?').run(
+		thread_id,
+		message_id
+	);
+	return res.changes > 0;
 }
 
 // ---------- decisions ----------
