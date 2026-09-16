@@ -1,4 +1,16 @@
-import type { Item, Edge, ItemKind, ItemStatus, Thread, Message, Decision, Concept, AgentTask, Board } from './db.js';
+import type {
+	Item,
+	Edge,
+	ItemKind,
+	ItemStatus,
+	Thread,
+	Message,
+	Decision,
+	Concept,
+	AgentTask,
+	Board,
+	BoardWithCount
+} from './db.js';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	const res = await fetch(path, {
@@ -98,7 +110,7 @@ export const api = {
 		request<AgentTask>('/api/agent-tasks', { method: 'POST', body: JSON.stringify(input) }),
 	cancelAgentTask: (id: string) => request<{ ok: boolean }>(`/api/agent-tasks/${id}`, { method: 'POST' }),
 
-	listBoards: () => request<Board[]>('/api/boards'),
+	listBoards: () => request<BoardWithCount[]>('/api/boards'),
 	createBoard: (name: string) =>
 		request<Board>('/api/boards', { method: 'POST', body: JSON.stringify({ name }) }),
 	renameBoard: (id: string, name: string) =>
@@ -106,4 +118,16 @@ export const api = {
 	deleteBoard: (id: string) => request<{ ok: boolean }>(`/api/boards/${id}`, { method: 'DELETE' })
 };
 
-export type { Item, Edge, ItemKind, ItemStatus, Thread, Message, Decision, Concept, AgentTask, Board };
+export type {
+	Item,
+	Edge,
+	ItemKind,
+	ItemStatus,
+	Thread,
+	Message,
+	Decision,
+	Concept,
+	AgentTask,
+	Board,
+	BoardWithCount
+};

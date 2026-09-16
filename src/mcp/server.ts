@@ -360,7 +360,7 @@ server.registerTool(
 	'bb_board_list',
 	{
 		title: 'List boards',
-		description: 'List all boards (id, name, created_at).',
+		description: 'List all boards (id, name, created_at, item_count).',
 		inputSchema: {}
 	},
 	() => text(listBoards())

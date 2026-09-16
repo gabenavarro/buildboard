@@ -33,6 +33,17 @@ describe('boards', () => {
 		expect(getBoard(b.id)).toBeNull();
 	});
 
+	it('reports per-board item counts in listBoards', async () => {
+		const { listBoards, createBoard, createItem } = await import('../lib/store.js');
+		const b = createBoard('counted');
+		createItem({ title: 'one', board_id: b.id });
+		createItem({ title: 'two', board_id: b.id });
+
+		const boards = listBoards();
+		expect(boards.find((x) => x.id === b.id)?.item_count).toBe(2);
+		expect(boards.find((x) => x.id === 'default')?.item_count).toBe(0);
+	});
+
 	it('refuses to delete the default board or a board with items', async () => {
 		const { createBoard, deleteBoard, createItem } = await import('../lib/store.js');
 		const b = createBoard('full');
