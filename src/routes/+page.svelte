@@ -15,6 +15,10 @@
 	let focusItem = $state<string | null>(null);
 	let renameName = $state('');
 	let renameInput = $state<HTMLInputElement | null>(null);
+	let modal = $state<'create' | 'delete' | null>(null);
+	let newName = $state('');
+	let modalError = $state<string | null>(null);
+	let newInput = $state<HTMLInputElement | null>(null);
 
 	$effect(() => {
 		localStorage.setItem(BOARD_KEY, currentBoardId);
@@ -35,22 +39,43 @@
 	});
 
 	async function newBoard() {
-		const name = prompt('Board name?');
-		if (!name?.trim()) return;
-		const b = await api.createBoard(name.trim());
-		currentBoardId = b.id;
-		await loadBoards();
+		newName = '';
+		modalError = null;
+		modal = 'create';
+	}
+
+	$effect(() => {
+		if (modal === 'create' && newInput) newInput.focus();
+	});
+
+	async function commitNewBoard() {
+		const name = newName.trim();
+		if (!name) return;
+		try {
+			const b = await api.createBoard(name);
+			currentBoardId = b.id;
+			await loadBoards();
+			modal = null;
+		} catch (e) {
+			modalError = e instanceof Error ? e.message : 'failed to create board';
+		}
 	}
 
 	async function removeBoard(id: string) {
 		if (id === 'default') return;
-		if (!confirm('Delete this board? (only works if it has no items)')) return;
+		modalError = null;
+		modal = 'delete';
+	}
+
+	async function commitDelete() {
+		const id = currentBoardId;
 		try {
 			await api.deleteBoard(id);
 			if (currentBoardId === id) currentBoardId = 'default';
 			await loadBoards();
+			modal = null;
 		} catch (e) {
-			alert(e instanceof Error ? e.message : 'failed to delete board');
+			modalError = e instanceof Error ? e.message : 'failed to delete board';
 		}
 	}
 
@@ -133,8 +158,43 @@
 	</header>
 
 	<SvelteFlowProvider>
-		<Board boardId={currentBoardId} focusItem={focusItem} onfocusconsumed={() => (focusItem = null)} />
+		<Board boardId={currentBoardId} boards={boards} focusItem={focusItem} onfocusconsumed={() => (focusItem = null)} onitemchanged={() => void loadBoards()} />
 	</SvelteFlowProvider>
+
+	{#if modal}
+		<div class="backdrop" onmousedown={() => (modal = null)}>
+			<div class="modal" role="dialog" onmousedown={(e) => e.stopPropagation()}>
+				{#if modal === 'create'}
+					<h3>New board</h3>
+					<input
+						bind:this={newInput}
+						bind:value={newName}
+						placeholder="Board name"
+						onkeydown={(e) => {
+							if (e.key === 'Enter') {
+								e.preventDefault();
+								commitNewBoard();
+							} else if (e.key === 'Escape') modal = null;
+						}}
+					/>
+				{:else}
+					<h3>Delete “{boards.find((b) => b.id === currentBoardId)?.name}”?</h3>
+					<p class="hint">Only works if the board has no items.</p>
+				{/if}
+				{#if modalError}
+					<p class="err">{modalError}</p>
+				{/if}
+				<div class="row">
+					<button class="ghost" onclick={() => (modal = null)}>Cancel</button>
+					{#if modal === 'create'}
+						<button onclick={commitNewBoard}>Create</button>
+					{:else}
+						<button class="danger" onclick={commitDelete}>Delete</button>
+					{/if}
+				</div>
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -177,6 +237,47 @@
 	}
 	.ghost {
 		background: transparent;
+	}
+	.backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.45);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 50;
+	}
+	.modal {
+		width: 300px;
+		background: var(--bg-raise);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		padding: 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.modal h3 {
+		font-size: 14px;
+	}
+	.modal input {
+		width: 100%;
+	}
+	.modal .hint {
+		font-size: 12px;
+		color: var(--text-dim);
+	}
+	.modal .err {
+		font-size: 12px;
+		color: #e5484d;
+	}
+	.modal .row {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+	}
+	.danger {
+		color: #e5484d;
 	}
 	.meta {
 		flex: 1;
