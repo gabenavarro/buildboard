@@ -37,6 +37,7 @@
 		"@modelcontextprotocol/sdk": "^1.30.0",
 		"@sveltejs/adapter-node": "^5.5.7",
 		"@xyflow/svelte": "^1.6.6",
+		"marked": "^18.0.13",
 		"zod": "^4.6.5"
 	}
 }

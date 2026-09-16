@@ -45,6 +45,12 @@
 		rationale = '';
 	}
 
+	async function choose(d: Decision, option: string) {
+		if (d.status !== 'active') return;
+		await api.updateDecision(d.id, { choice: option });
+		load();
+	}
+
 	async function supersede(d: Decision) {
 		await api.updateDecision(d.id, { status: 'superseded' });
 		load();
@@ -64,6 +70,20 @@
 			{#each decisions as d (d.id)}
 				<div class="card {d.status}">
 					<div class="q">{d.question}</div>
+					{#if d.options.length > 0}
+						<div class="chips">
+							{#each d.options as option (option)}
+								<button
+									class="chip"
+									class:chosen={d.choice === option}
+									disabled={d.status !== 'active'}
+									onclick={() => choose(d, option)}
+								>
+									{option}
+								</button>
+							{/each}
+						</div>
+					{/if}
 					{#if d.choice}
 						<div class="choice">→ {d.choice}</div>
 					{:else}
@@ -135,9 +155,30 @@
 		font-weight: 600;
 		font-size: 13px;
 	}
+	.chips {
+		margin-top: 8px;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.chip {
+		font-size: 11px;
+		padding: 3px 10px;
+		border-radius: 999px;
+		background: var(--bg-raise-2);
+		border: 1px solid var(--border);
+		color: var(--text);
+	}
+	.chip.chosen {
+		background: var(--accent-soft);
+		border-color: var(--accent);
+		color: var(--accent);
+		font-weight: 600;
+	}
 	.choice {
-		margin-top: 4px;
-		font-size: 12px;
+		margin-top: 6px;
+		font-size: 13px;
+		font-weight: 600;
 		color: var(--kind-plan);
 	}
 	.unresolved {
