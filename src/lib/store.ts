@@ -216,10 +216,27 @@ export function updateItem(id: string, patch: Record<string, unknown>): Item | n
 	return getItem(id);
 }
 
+/**
+ * Delete an item and everything lifecycle-tied to it, in one transaction:
+ * threads (messages follow via their FK ON DELETE CASCADE), decisions, and
+ * agent tasks are removed; edges follow via their FK ON DELETE CASCADE.
+ * Concepts intentionally survive with item_id = NULL (FK ON DELETE SET NULL)
+ * — a concept card can outlive the note it was extracted from.
+ */
 export function deleteItem(id: string): boolean {
 	const db = getDb();
-	const res = db.prepare('DELETE FROM items WHERE id = ?').run(id);
-	return res.changes > 0;
+	db.exec('BEGIN');
+	try {
+		db.prepare('DELETE FROM threads WHERE item_id = ?').run(id);
+		db.prepare('DELETE FROM decisions WHERE item_id = ?').run(id);
+		db.prepare('DELETE FROM agent_tasks WHERE item_id = ?').run(id);
+		const res = db.prepare('DELETE FROM items WHERE id = ?').run(id);
+		db.exec('COMMIT');
+		return res.changes > 0;
+	} catch (err) {
+		db.exec('ROLLBACK');
+		throw err;
+	}
 }
 
 export interface CreateEdgeInput {
