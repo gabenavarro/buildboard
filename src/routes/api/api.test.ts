@@ -364,3 +364,54 @@ describe('API error handling', () => {
 		expect(boom.status).toBe(500);
 	});
 });
+
+describe('search', () => {
+	async function makeFixture() {
+		const { POST: postBoard } = await import('./boards/+server.js');
+		const { POST } = await import('./items/+server.js');
+		const { POST: postDecision } = await import('./decisions/+server.js');
+		const boardRes = await postBoard(event({}, jsonBody({ name: 'Other board' })));
+		const otherBoardId = ((await boardRes.json()) as { id: string }).id;
+		const planRes = await POST(event({}, jsonBody({ title: 'Storage plan', kind: 'plan', board_id: 'default' })));
+		const plan = (await planRes.json()) as { id: string };
+		const otherRes = await POST(event({}, jsonBody({ title: 'Storage elsewhere', kind: 'plan', board_id: otherBoardId })));
+		const other = (await otherRes.json()) as { id: string };
+		const decRes = await postDecision(
+			event({}, jsonBody({ item_id: plan.id, question: 'Which storage backend?', rationale: 'SQLite for storage' }))
+		);
+		const dec = (await decRes.json()) as { id: string };
+		return { plan, other, dec };
+	}
+
+	it('returns enriched hits with item_id and board_id', async () => {
+		const { GET } = await import('./search/+server.js');
+		const { plan, dec } = await makeFixture();
+		const res = await GET(
+			{ request: new Request('http://localhost/api/search?q=storage'), params: {}, url: new URL('http://localhost/api/search?q=storage') } as never
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { hits: { source: string; id: string; item_id: string | null; board_id: string | null }[] };
+		expect(body.hits.length).toBeGreaterThanOrEqual(2);
+		const itemHit = body.hits.find((h) => h.source === 'item' && h.id === plan.id);
+		expect(itemHit?.item_id).toBe(plan.id);
+		expect(itemHit?.board_id).toBe('default');
+		const decHit = body.hits.find((h) => h.source === 'decision' && h.id === dec.id);
+		expect(decHit?.item_id).toBe(plan.id);
+		expect(decHit?.board_id).toBe('default');
+	});
+
+	it('filters by board', async () => {
+		const { GET } = await import('./search/+server.js');
+		const { other } = await makeFixture();
+		const res = await GET(
+			{ request: new Request('http://localhost/api/search?q=storage&board=default'), params: {}, url: new URL('http://localhost/api/search?q=storage&board=default') } as never
+		);
+		const body = (await res.json()) as { hits: { id: string }[] };
+		expect(body.hits.every((h) => h.id !== other.id)).toBe(true);
+		const res2 = await GET(
+			{ request: new Request('http://localhost/api/search?q=storage&board=nope'), params: {}, url: new URL('http://localhost/api/search?q=storage&board=nope') } as never
+		);
+		const body2 = (await res2.json()) as { hits: { id: string }[] };
+		expect(body2.hits.length).toBe(0);
+	});
+});

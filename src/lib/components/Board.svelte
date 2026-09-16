@@ -10,7 +10,17 @@
 
 	type BoardNode = Node<{ item: Item }>;
 
-	let { boardId, onitemchanged }: { boardId: string; onitemchanged?: () => void } = $props();
+	let {
+		boardId,
+		focusItem = null,
+		onfocusconsumed,
+		onitemchanged
+	}: {
+		boardId: string;
+		focusItem?: string | null;
+		onfocusconsumed?: () => void;
+		onitemchanged?: () => void;
+	} = $props();
 
 	let nodes = $state<BoardNode[]>([]);
 	let edges = $state<Edge[]>([]);
@@ -23,7 +33,7 @@
 
 	const nodeTypes = { item: ItemNode };
 
-	const { screenToFlowPosition, fitView, setZoom } = useSvelteFlow();
+	const { screenToFlowPosition, fitView, setZoom, setCenter } = useSvelteFlow();
 
 	setContext('board:statuschange', (item: Item) => handleUpdated(item));
 
@@ -63,6 +73,17 @@
 		// Runs on mount and again whenever the active board changes.
 		void boardId;
 		void load();
+	});
+
+	// Center + select a node the parent asked us to focus (e.g. from search).
+	$effect(() => {
+		if (!loaded || !focusItem) return;
+		const node = nodes.find((n) => n.id === focusItem);
+		if (node) {
+			selected = findItem(focusItem);
+			void setCenter(node.position.x + 100, node.position.y + 40, { zoom: 1, duration: 300 });
+		}
+		onfocusconsumed?.();
 	});
 
 	function findItem(id: string): Item | null {

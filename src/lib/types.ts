@@ -97,3 +97,13 @@ export interface AgentTask {
 
 export const ITEM_KINDS: ItemKind[] = ['note', 'concept', 'task', 'plan', 'decision', 'agent_task'];
 export const ITEM_STATUSES: ItemStatus[] = ['open', 'in_progress', 'done', 'blocked'];
+
+export interface SearchHit {
+	source: 'item' | 'decision' | 'concept' | 'message';
+	id: string;
+	title: string;
+	snippet: string;
+	score: number;
+	item_id: string | null;
+	board_id: string | null;
+}

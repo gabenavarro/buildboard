@@ -3,14 +3,16 @@
 	import { SvelteFlowProvider } from '@xyflow/svelte';
 
 	import Board from '$lib/components/Board.svelte';
+	import SearchBox from '$lib/components/SearchBox.svelte';
 	import { api } from '$lib/api.js';
-	import type { BoardWithCount } from '$lib/types.js';
+	import type { BoardWithCount, SearchHit } from '$lib/types.js';
 
 	const BOARD_KEY = 'buildboard:board';
 
 	let boards = $state<BoardWithCount[]>([]);
 	let currentBoardId = $state('default');
 	let renaming = $state(false);
+	let focusItem = $state<string | null>(null);
 	let renameName = $state('');
 	let renameInput = $state<HTMLInputElement | null>(null);
 
@@ -52,6 +54,13 @@
 		}
 	}
 
+	function handleSearchSelect(hit: SearchHit) {
+		const itemId = hit.source === 'item' ? hit.id : hit.item_id;
+		if (!itemId) return;
+		if (hit.board_id && hit.board_id !== currentBoardId) currentBoardId = hit.board_id;
+		focusItem = itemId;
+	}
+
 	function startRename() {
 		const b = boards.find((x) => x.id === currentBoardId);
 		if (!b) return;
@@ -85,6 +94,8 @@
 			<span class="logo">◆</span>
 			<span>buildboard</span>
 		</div>
+
+		<SearchBox boardId={currentBoardId} {boards} onselect={handleSearchSelect} />
 
 		<div class="boards">
 			{#if renaming}
@@ -122,7 +133,7 @@
 	</header>
 
 	<SvelteFlowProvider>
-		<Board boardId={currentBoardId} />
+		<Board boardId={currentBoardId} focusItem={focusItem} onfocusconsumed={() => (focusItem = null)} />
 	</SvelteFlowProvider>
 </div>
 

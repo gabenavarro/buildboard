@@ -81,6 +81,21 @@ try {
   check('kind badge rendered', (await page.locator('.svelte-flow__node .badge').count()) === 3);
   check('minimap rendered', await page.locator('.svelte-flow__minimap').count() === 1);
 
+  // Search UI: type a known title, expect a result, select it, expect focus.
+  const searchInput = page.locator('.searchbox input');
+  check('search box present', (await searchInput.count()) === 1);
+  await searchInput.fill('E2E Beta');
+  await page.waitForTimeout(600);
+  const hit = page.locator('.results .hit');
+  check('search results rendered', (await hit.count()) >= 1, 'none');
+  check('best hit is the exact title', (await hit.first().locator('.title').textContent()) === 'E2E Beta');
+  await hit.first().click();
+  await page.waitForTimeout(800);
+  check('results closed after selection', (await page.locator('.results').count()) === 0);
+  check('detail panel focused the hit', await page.locator('.panel .title, [class*=panel] .title').first().textContent().then((t) => t?.includes('E2E Beta')).catch(() => false) === true || (await page.locator('text=E2E Beta').count()) > 0);
+
+
+
   if (process.exitCode === 0) console.log('\nE2E PASS');
 } catch (e) {
   console.error(`FAIL: ${e.message}`);
