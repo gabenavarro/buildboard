@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { api } from '$lib/api.js';
 	import type { Item, ItemKind, ItemStatus } from '$lib/db.js';
+	import ThreadTab from './ThreadTab.svelte';
+	import DecisionTab from './DecisionTab.svelte';
+	import ConceptTab from './ConceptTab.svelte';
 
 	let {
 		item,
@@ -16,6 +19,9 @@
 
 	const KINDS: ItemKind[] = ['note', 'concept', 'task', 'plan', 'decision', 'agent_task'];
 	const STATUSES: ItemStatus[] = ['open', 'in_progress', 'done', 'blocked'];
+
+	type Tab = 'item' | 'thread' | 'decisions' | 'concept';
+	let tab = $state<Tab>('item');
 
 	let title = $state(item.title);
 	let kind = $state<ItemKind>(item.kind);
@@ -45,6 +51,13 @@
 	function remove() {
 		ondelete(item.id);
 	}
+
+	const tabs: { id: Tab; label: string; show: boolean }[] = [
+		{ id: 'item', label: 'Item', show: true },
+		{ id: 'thread', label: 'Thread', show: true },
+		{ id: 'decisions', label: 'Decisions', show: true },
+		{ id: 'concept', label: 'Concept', show: item.kind === 'concept' }
+	];
 </script>
 
 <aside class="panel">
@@ -53,53 +66,75 @@
 		<button class="icon" onclick={onclose} aria-label="Close">✕</button>
 	</header>
 
-	<label>
-		<span>Title</span>
-		<input value={title} oninput={(e) => (title = e.currentTarget.value)} />
-	</label>
+	<nav class="tabs">
+		{#each tabs.filter((t) => t.show) as t (t.id)}
+			<button class:active={tab === t.id} onclick={() => (tab = t.id)}>{t.label}</button>
+		{/each}
+	</nav>
 
-	<div class="row">
-		<label>
-			<span>Kind</span>
-			<select value={kind} onchange={(e) => (kind = e.currentTarget.value as ItemKind)}>
-				{#each KINDS as k (k)}
-					<option value={k}>{k}</option>
-				{/each}
-			</select>
-		</label>
-		<label>
-			<span>Status</span>
-			<select value={status} onchange={(e) => (status = e.currentTarget.value as ItemStatus)}>
-				{#each STATUSES as s (s)}
-					<option value={s}>{s}</option>
-				{/each}
-			</select>
-		</label>
-	</div>
+	{#if tab === 'item'}
+		<div class="tabbody">
+			<label>
+				<span>Title</span>
+				<input value={title} oninput={(e) => (title = e.currentTarget.value)} />
+			</label>
 
-	<label>
-		<span>Tags (comma-separated)</span>
-		<input value={tagsText} oninput={(e) => (tagsText = e.currentTarget.value)} />
-	</label>
+			<div class="row">
+				<label>
+					<span>Kind</span>
+					<select value={kind} onchange={(e) => (kind = e.currentTarget.value as ItemKind)}>
+						{#each KINDS as k (k)}
+							<option value={k}>{k}</option>
+						{/each}
+					</select>
+				</label>
+				<label>
+					<span>Status</span>
+					<select value={status} onchange={(e) => (status = e.currentTarget.value as ItemStatus)}>
+						{#each STATUSES as s (s)}
+							<option value={s}>{s}</option>
+						{/each}
+					</select>
+				</label>
+			</div>
 
-	<label class="grow">
-		<span>Body (markdown)</span>
-		<textarea rows={10} value={bodyMd} oninput={(e) => (bodyMd = e.currentTarget.value)}></textarea>
-	</label>
+			<label>
+				<span>Tags (comma-separated)</span>
+				<input value={tagsText} oninput={(e) => (tagsText = e.currentTarget.value)} />
+			</label>
 
-	{#if error}
-		<p class="error">{error}</p>
+			<label class="grow">
+				<span>Body (markdown)</span>
+				<textarea rows={10} value={bodyMd} oninput={(e) => (bodyMd = e.currentTarget.value)}></textarea>
+			</label>
+
+			{#if error}
+				<p class="error">{error}</p>
+			{/if}
+
+			<footer>
+				<button class="danger" onclick={remove}>Delete</button>
+				<button class="primary" onclick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+			</footer>
+		</div>
+	{:else if tab === 'thread'}
+		<div class="tabbody fill">
+			<ThreadTab item={item} />
+		</div>
+	{:else if tab === 'decisions'}
+		<div class="tabbody scroll">
+			<DecisionTab item={item} />
+		</div>
+	{:else if tab === 'concept'}
+		<div class="tabbody fill">
+			<ConceptTab item={item} />
+		</div>
 	{/if}
-
-	<footer>
-		<button class="danger" onclick={remove}>Delete</button>
-		<button class="primary" onclick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-	</footer>
 </aside>
 
 <style>
 	.panel {
-		width: 320px;
+		width: 340px;
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
@@ -107,7 +142,7 @@
 		border-left: 1px solid var(--border);
 		padding: 16px;
 		height: 100%;
-		overflow-y: auto;
+		min-height: 0;
 	}
 	header {
 		display: flex;
@@ -126,6 +161,44 @@
 		border: none;
 		color: var(--text-dim);
 	}
+	.tabs {
+		display: flex;
+		gap: 4px;
+		border-bottom: 1px solid var(--border);
+	}
+	.tabs button {
+		flex: 1;
+		border: none;
+		border-bottom: 2px solid transparent;
+		background: transparent;
+		border-radius: 0;
+		padding: 6px 4px;
+		font-size: 12px;
+		color: var(--text-dim);
+	}
+	.tabs button.active {
+		color: var(--text);
+		border-bottom-color: var(--accent);
+	}
+	.tabbody {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+	}
+	.tabbody.fill {
+		overflow: hidden;
+	}
+	.tabbody.scroll {
+		overflow-y: auto;
+	}
+	.row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 10px;
+	}
 	label {
 		display: flex;
 		flex-direction: column;
@@ -135,11 +208,6 @@
 	}
 	label.grow {
 		flex: 1;
-	}
-	.row {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 10px;
 	}
 	textarea {
 		resize: vertical;

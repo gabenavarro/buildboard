@@ -187,7 +187,52 @@ const MIGRATIONS = [
 	`CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id)`,
-	`CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id)`
+	`CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id)`,
+	// FTS5 full-text indexes (external content, kept in sync by triggers)
+	`CREATE VIRTUAL TABLE IF NOT EXISTS fts_items USING fts5(title, body_md, content='items', content_rowid='rowid')`,
+	`CREATE VIRTUAL TABLE IF NOT EXISTS fts_decisions USING fts5(question, rationale, content='decisions', content_rowid='rowid')`,
+	`CREATE VIRTUAL TABLE IF NOT EXISTS fts_concepts USING fts5(name, definition, details_md, content='concepts', content_rowid='rowid')`,
+	`CREATE VIRTUAL TABLE IF NOT EXISTS fts_messages USING fts5(content, content='messages', content_rowid='rowid')`,
+	`CREATE TRIGGER IF NOT EXISTS items_fts_ai AFTER INSERT ON items BEGIN
+		INSERT INTO fts_items(rowid, title, body_md) VALUES (new.rowid, new.title, new.body_md);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS items_fts_ad AFTER DELETE ON items BEGIN
+		INSERT INTO fts_items(fts_items, rowid, title, body_md) VALUES ('delete', old.rowid, old.title, old.body_md);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS items_fts_au AFTER UPDATE ON items BEGIN
+		INSERT INTO fts_items(fts_items, rowid, title, body_md) VALUES ('delete', old.rowid, old.title, old.body_md);
+		INSERT INTO fts_items(rowid, title, body_md) VALUES (new.rowid, new.title, new.body_md);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS decisions_fts_ai AFTER INSERT ON decisions BEGIN
+		INSERT INTO fts_decisions(rowid, question, rationale) VALUES (new.rowid, new.question, new.rationale);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS decisions_fts_ad AFTER DELETE ON decisions BEGIN
+		INSERT INTO fts_decisions(fts_decisions, rowid, question, rationale) VALUES ('delete', old.rowid, old.question, old.rationale);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS decisions_fts_au AFTER UPDATE ON decisions BEGIN
+		INSERT INTO fts_decisions(fts_decisions, rowid, question, rationale) VALUES ('delete', old.rowid, old.question, old.rationale);
+		INSERT INTO fts_decisions(rowid, question, rationale) VALUES (new.rowid, new.question, new.rationale);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS concepts_fts_ai AFTER INSERT ON concepts BEGIN
+		INSERT INTO fts_concepts(rowid, name, definition, details_md) VALUES (new.rowid, new.name, new.definition, new.details_md);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS concepts_fts_ad AFTER DELETE ON concepts BEGIN
+		INSERT INTO fts_concepts(fts_concepts, rowid, name, definition, details_md) VALUES ('delete', old.rowid, old.name, old.definition, old.details_md);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS concepts_fts_au AFTER UPDATE ON concepts BEGIN
+		INSERT INTO fts_concepts(fts_concepts, rowid, name, definition, details_md) VALUES ('delete', old.rowid, old.name, old.definition, old.details_md);
+		INSERT INTO fts_concepts(rowid, name, definition, details_md) VALUES (new.rowid, new.name, new.definition, new.details_md);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+		INSERT INTO fts_messages(rowid, content) VALUES (new.rowid, new.content);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+		INSERT INTO fts_messages(fts_messages, rowid, content) VALUES ('delete', old.rowid, old.content);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+		INSERT INTO fts_messages(fts_messages, rowid, content) VALUES ('delete', old.rowid, old.content);
+		INSERT INTO fts_messages(rowid, content) VALUES (new.rowid, new.content);
+	END`
 ];
 
 const MIGRATION_NAMES = MIGRATIONS.map((_, i) => `m${String(i).padStart(3, '0')}`);
