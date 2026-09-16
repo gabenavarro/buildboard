@@ -7,7 +7,9 @@ type Params = { id: string };
 
 /**
  * Server-Sent Events stream of the agent's output.
- * Replays any transcript already on disk, then tails the live task.
+ * For a finished task, replays the stored transcript; for a live task,
+ * replays the in-memory transcript accumulated so far, then tails the
+ * emitter. The emitter's 'done' is the single source of termination.
  */
 export const GET: RequestHandler<Params> = async ({ params, request }) => {
 	const task = getAgentTask(params.id);
@@ -20,14 +22,13 @@ export const GET: RequestHandler<Params> = async ({ params, request }) => {
 				controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
 			};
 
-			if (task.transcript) send('chunk', { text: task.transcript });
-
 			const done = (payload: Record<string, unknown>) => {
 				send('done', payload);
 				controller.close();
 			};
 
 			if (task.status !== 'running') {
+				if (task.transcript) send('chunk', { text: task.transcript });
 				done({ status: task.status });
 				return;
 			}
@@ -38,6 +39,10 @@ export const GET: RequestHandler<Params> = async ({ params, request }) => {
 				done({ status: 'failed', note: 'process is no longer running' });
 				return;
 			}
+
+			// Replay what the agent has produced so far (the DB transcript is
+			// NULL while a task runs), then tail live chunks.
+			if (activeTask.transcript) send('chunk', { text: activeTask.transcript });
 
 			const onChunk = (text: string) => send('chunk', { text });
 			const onDone = (payload: Record<string, unknown>) => done(payload);

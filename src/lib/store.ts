@@ -560,6 +560,14 @@ export function getAgentTask(id: string): AgentTask | null {
 	return row ? (row as unknown as AgentTask) : null;
 }
 
+export function getRunningAgentTaskForItem(item_id: string): AgentTask | null {
+	const db = getDb();
+	const row = db
+		.prepare("SELECT * FROM agent_tasks WHERE item_id = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1")
+		.get(item_id);
+	return row ? (row as unknown as AgentTask) : null;
+}
+
 export function finishAgentTask(id: string, status: AgentTaskStatus, transcript?: string | null): void {
 	const db = getDb();
 	db.prepare(
