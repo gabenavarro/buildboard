@@ -22,7 +22,9 @@ watchdog.unref?.();
 const dbDir = mkdtempSync(path.join(tmpdir(), 'buildboard-e2e-'));
 const dbFile = path.join(dbDir, 'e2e.db');
 
+/** @type {import('node:child_process').ChildProcess | null} */
 let child = null;
+/** @type {import('playwright').Browser | null} */
 let browser = null;
 
 async function waitForServer(timeoutMs = 30000) {
@@ -37,6 +39,7 @@ async function waitForServer(timeoutMs = 30000) {
   throw new Error('dev server did not start in time');
 }
 
+/** @param {string} title @param {string} kind @param {number} x @param {number} y */
 async function apiCreateItem(title, kind, x, y) {
   const res = await fetch(`${BASE}/api/items`, {
     method: 'POST',
@@ -47,6 +50,7 @@ async function apiCreateItem(title, kind, x, y) {
   return res.json();
 }
 
+/** @param {string} label @param {boolean} cond @param {string} [detail] */
 function check(label, cond, detail = '') {
   if (!cond) {
     console.error(`FAIL: ${label}${detail ? ` — ${detail}` : ''}`);
@@ -76,7 +80,8 @@ try {
 
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
-  const pageErrors = [];
+  /** @type {string[]} */
+const pageErrors = [];
   page.on('pageerror', (e) => pageErrors.push(String(e)));
 
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
@@ -177,7 +182,7 @@ try {
   await page.locator('.boards button[title="Delete board"]').click();
   const deleteModal = page.locator('.modal');
   await deleteModal.waitFor({ timeout: 5000 });
-  check('delete modal names the board', (await deleteModal.textContent())?.includes('E2E Board Three'));
+  check('delete modal names the board', (await deleteModal.textContent())?.includes('E2E Board Three') === true);
   await deleteModal.locator('button', { hasText: 'Delete' }).click();
   await page.waitForTimeout(700);
   check('board deleted via modal', (await page.locator('select option').count()) === 2);
@@ -187,17 +192,19 @@ try {
   clearTimeout(watchdog);
   if (process.exitCode === 0) console.log('\nE2E PASS');
 } catch (e) {
-  console.error(`FAIL: ${e.message}`);
+  console.error(`FAIL: ${e instanceof Error ? e.message : String(e)}`);
   process.exitCode = 1;
 } finally {
   if (browser) await browser.close().catch(() => {});
   if (child) {
+		const proc = child;
+		/** @param {number | 'SIGTERM' | 'SIGKILL'} sig */
 		const killGroup = (sig) => {
 			try {
-				process.kill(-child.pid, sig);
+				if (proc.pid) process.kill(-proc.pid, sig);
 			} catch {
 				try {
-					child.kill(sig);
+					proc.kill(sig);
 				} catch { /* expected */ }
 			}
 		};
