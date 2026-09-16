@@ -181,4 +181,28 @@ describe('agent runner hardening', () => {
 		expect(s1.dones).toBe(1);
 		expect(s2.dones).toBe(1);
 	}, 15000);
+
+	it('reconciles stale running tasks on startup so the 409 guard can wedge no item', async () => {
+		const { createItem, createAgentTask, getAgentTask, getRunningAgentTaskForItem, reconcileStaleAgentTasks } = await import('./store.js');
+		const item = createItem({ title: 'work', kind: 'task' });
+		const orphan = createAgentTask({ item_id: item.id, prompt: 'will be orphaned' });
+		expect(orphan.status).toBe('running');
+		expect(getRunningAgentTaskForItem(item.id)?.id).toBe(orphan.id);
+
+		// Simulate a server restart: the in-memory table is gone, only the DB row remains.
+		const n = reconcileStaleAgentTasks();
+		expect(n).toBe(1);
+		const after = getAgentTask(orphan.id)!;
+		expect(after.status).toBe('failed');
+		expect(after.finished_at).toBeTruthy();
+		expect(after.transcript ?? '').toContain('server restarted');
+		expect(getRunningAgentTaskForItem(item.id)).toBeNull();
+
+		// The item is unblocked: a new spawn for the same item succeeds.
+		process.env.BUILDBOARD_AGENT_CMD = 'sleep 30';
+		const runner = await import('./agents/runner.js');
+		const fresh = runner.startAgentTask({ item_id: item.id, prompt: 'again' });
+		expect(fresh.status).toBe('running');
+		expect(runner.cancelAgentTask(fresh.id)).toBe(true);
+	});
 });
