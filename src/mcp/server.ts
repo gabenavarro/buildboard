@@ -45,9 +45,12 @@ server.registerTool(
 	{
 		title: 'Board brief',
 		description:
-			'Get a compact context digest of the whole buildboard (~200 tokens): open work, active decisions, concepts, recent messages. Start here to orient yourself.'
+			'Get a compact context digest of one board (~200 tokens): counts, open work, active decisions, concepts, recent messages. Defaults to the default board. Start here to orient yourself.',
+		inputSchema: {
+			board_id: z.string().optional().describe('Board to digest (default: the default board)')
+		}
 	},
-	() => text(buildBrief())
+	({ board_id }) => text(buildBrief({ board_id }))
 );
 
 server.registerTool(

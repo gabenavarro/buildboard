@@ -97,6 +97,113 @@ describe('items store', () => {
 	});
 });
 
+describe('moveItem', () => {
+	it('moves an item to another board', async () => {
+		const { createItem, createBoard, moveItem, getItem } = await import('../lib/store.js');
+		const b = createBoard('Roadmap');
+		const item = createItem({ title: 'mover', kind: 'task', x: 5, y: 6 });
+		const moved = moveItem(item.id, b.id);
+		expect(moved?.board_id).toBe(b.id);
+		expect(getItem(item.id)?.board_id).toBe(b.id);
+		// position and content are preserved
+		expect(moved?.x).toBe(5);
+		expect(moved?.y).toBe(6);
+		expect(moved?.kind).toBe('task');
+	});
+
+	it('returns 404 StoreError for an unknown board and null for an unknown item', async () => {
+		const { createItem, moveItem, StoreError } = await import('../lib/store.js');
+		const item = createItem({ title: 'x' });
+		expect(() => moveItem(item.id, 'nope')).toThrow(StoreError);
+		try {
+			moveItem(item.id, 'nope');
+			throw new Error('expected throw');
+		} catch (e) {
+			expect((e as { status: number }).status).toBe(404);
+		}
+		expect(moveItem('missing', 'default')).toBeNull();
+	});
+
+	it('moves edges that follow the item to the target board; cross-board edges keep their original board', async () => {
+		const {
+			createItem,
+			createBoard,
+			createEdge,
+			moveItem,
+			getEdge
+		} = await import('../lib/store.js');
+		const b = createBoard('Other');
+		const a = createItem({ title: 'a' }); // default
+		const sameBoard = createItem({ title: 'same', board_id: b.id }); // Other
+		const otherBoard = createItem({ title: 'other' }); // default
+		const eFollow = createEdge({ from_id: a.id, to_id: sameBoard.id }); // board 'default'
+		const eCross = createEdge({ from_id: a.id, to_id: otherBoard.id, kind: 'relates_to' }); // board 'default'
+
+		const moved = moveItem(a.id, b.id);
+		expect(moved?.board_id).toBe(b.id);
+
+		// sameBoard is on the target board, so the edge follows
+		expect(getEdge(eFollow.id)?.board_id).toBe(b.id);
+		// otherBoard stays on 'default', so the cross-board edge keeps its original board
+		expect(getEdge(eCross.id)?.board_id).toBe('default');
+	});
+
+	it('moves edges incident via to_id as well', async () => {
+		const { createItem, createBoard, createEdge, moveItem, getEdge } = await import('../lib/store.js');
+		const b = createBoard('Other');
+		const a = createItem({ title: 'a', board_id: b.id });
+		const d = createItem({ title: 'd' }); // default
+		const e = createEdge({ from_id: d.id, to_id: a.id });
+		moveItem(d.id, b.id);
+		expect(getEdge(e.id)?.board_id).toBe(b.id);
+	});
+});
+
+describe('duplicateItem', () => {
+	it('copies content with a new id, offset position, and same board', async () => {
+		const { createItem, duplicateItem, getItem } = await import('../lib/store.js');
+		const src = createItem({
+			title: 'template',
+			kind: 'plan',
+			status: 'in_progress',
+			body_md: 'the body',
+			tags: ['t1', 't2'],
+			x: 10,
+			y: 20
+		});
+		const copy = duplicateItem(src.id);
+		expect(copy).not.toBeNull();
+		expect(copy?.id).not.toBe(src.id);
+		expect(copy?.board_id).toBe(src.board_id);
+		expect(copy?.kind).toBe(src.kind);
+		expect(copy?.status).toBe(src.status);
+		expect(copy?.tags).toEqual(src.tags);
+		expect(copy?.body_md).toBe(src.body_md);
+		expect(copy?.title).toBe('template');
+		expect(copy?.x).toBe(40);
+		expect(copy?.y).toBe(50);
+		expect(getItem(src.id)).not.toBeNull();
+	});
+
+	it('honors target board and title suffix', async () => {
+		const { createItem, createBoard, duplicateItem } = await import('../lib/store.js');
+		const b = createBoard('Clone target');
+		const src = createItem({ title: 'orig', x: 1, y: 2 });
+		const copy = duplicateItem(src.id, { board_id: b.id, title_suffix: ' (copy)' });
+		expect(copy?.board_id).toBe(b.id);
+		expect(copy?.title).toBe('orig (copy)');
+		expect(copy?.x).toBe(31);
+		expect(copy?.y).toBe(32);
+	});
+
+	it('returns null for an unknown source and 404 StoreError for an unknown board', async () => {
+		const { createItem, duplicateItem, StoreError } = await import('../lib/store.js');
+		expect(duplicateItem('missing')).toBeNull();
+		const src = createItem({ title: 'x' });
+		expect(() => duplicateItem(src.id, { board_id: 'nope' })).toThrow(StoreError);
+	});
+});
+
 describe('edges store', () => {
 	it('creates and deletes edges with referential integrity', async () => {
 		const { createItem, createEdge, listEdges, deleteEdge, deleteItem } = await import('../lib/store.js');

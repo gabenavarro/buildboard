@@ -14,7 +14,7 @@ export function buildPrompt(item: Item, extra?: string): string {
 		'You are a subagent working inside "buildboard", a planning whiteboard shared between a user and their AI assistant. Your job is to expand the item below into a detailed, actionable definition. Be concrete and structured; avoid fluff.',
 		'',
 		'## Board context (brief)',
-		buildBrief(),
+		buildBrief({ board_id: item.board_id }),
 		'',
 		'## Parent item',
 		parent
