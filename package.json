@@ -13,6 +13,10 @@
 		"lint": "eslint .",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"seed": "node --experimental-strip-types scripts/seed.ts",
+		"seed:reset": "npm run db:reset && npm run seed",
+		"db:reset": "node scripts/db.mjs reset",
+		"db:backup": "node scripts/db.mjs backup",
 		"mcp:build": "esbuild src/mcp/server.ts --bundle --platform=node --format=esm --outfile=dist/mcp/server.mjs",
 		"mcp": "npm run mcp:build && node dist/mcp/server.mjs"
 	},

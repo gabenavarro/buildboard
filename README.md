@@ -69,7 +69,7 @@ Item/edge endpoints accept `?board=<id>` to scope to a board (default `default`)
 | DELETE | `/api/concepts/:id` | Delete a concept |
 | GET | `/api/search` | Full-text search (`?q=&limit=&source=`) |
 | GET | `/api/brief` | Compact context digest (~200 tokens) |
-| GET | `/api/agent-tasks` | List agent tasks |
+| GET | `/api/agent-tasks` | List agent tasks (`?item_id=&limit=`) |
 | POST | `/api/agent-tasks` | Spawn a subagent (`item_id` and/or `prompt`, `agent`, `model`) |
 | GET | `/api/agent-tasks/:id` | Get one agent task |
 | POST | `/api/agent-tasks/:id` | Cancel a running task |
@@ -131,3 +131,13 @@ database.
 | `npm run lint` | ESLint |
 | `npm test` | Vitest unit tests |
 | `npm run mcp` | Bundle + run the MCP server (stdio) |
+| `npm run seed` | Seed a small demo board (skips if items already exist) |
+| `npm run seed:reset` | Delete the database, then seed a fresh demo board |
+| `npm run db:reset` | Delete `data/buildboard.db` + `-wal`/`-shm` sidecars |
+| `npm run db:backup` | Copy the database to `data/backups/buildboard-<timestamp>.db*` |
+
+`npm run db:backup` is a plain file copy of the database (and its WAL/SHM
+sidecars, if present). It is only safe when no writer is active — stop the
+dev server (and MCP server) before taking a backup. To restore, copy the
+timestamped file back to `data/buildboard.db`. The `node:sqlite` backup API
+is the alternative for online backups.

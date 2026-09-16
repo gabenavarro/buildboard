@@ -19,8 +19,8 @@
 
 	async function load() {
 		try {
-			const all = await fetch('/api/agent-tasks?limit=100').then((r) => r.json());
-			tasks = (all as AgentTask[]).filter((t) => t.item_id === item.id);
+			const data = await fetch(`/api/agent-tasks?item_id=${item.id}&limit=50`).then((r) => r.json());
+			tasks = data as AgentTask[];
 		} catch (e) {
 			console.error(e);
 		}

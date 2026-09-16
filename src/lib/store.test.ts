@@ -335,7 +335,8 @@ describe('listAgentTasks filters', () => {
 		finishAgentTask(done.id, 'succeeded');
 
 		expect(listAgentTasks()).toHaveLength(3);
-		expect(listAgentTasks(50, { item_id: a.id }).map((t) => t.id)).toEqual([running.id, done.id].sort());
+		// sort both sides: same-millisecond ties have no guaranteed DB order
+		expect(listAgentTasks(50, { item_id: a.id }).map((t) => t.id).sort()).toEqual([running.id, done.id].sort());
 		expect(listAgentTasks(50, { status: 'succeeded' }).map((t) => t.id)).toEqual([done.id]);
 		expect(listAgentTasks(50, { item_id: a.id, status: 'running' }).map((t) => t.id)).toEqual([running.id]);
 		expect(listAgentTasks(50, { item_id: a.id, status: 'succeeded' }).map((t) => t.id)).toEqual([done.id]);
