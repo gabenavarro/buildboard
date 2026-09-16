@@ -6,7 +6,7 @@
 	import { api } from '$lib/api.js';
 
 	let { data } = $props();
-	const item = $derived(data as Item);
+	const item = $derived((data as { item: Item }).item);
 	const onstatus = getContext<((item: Item) => void) | undefined>('board:statuschange');
 
 	function cycleStatus(e: MouseEvent) {
