@@ -15,6 +15,7 @@
 	let liveText = $state('');
 	let liveStatus = $state('');
 	let es: EventSource | null = null;
+	let running = $derived(!!liveTaskId && liveStatus === 'running');
 
 	async function load() {
 		try {
@@ -103,8 +104,8 @@
 			<span>Extra instruction (optional)</span>
 			<input value={instruction} oninput={(e) => (instruction = e.currentTarget.value)} placeholder="focus on…" />
 		</label>
-		<button class="primary" onclick={start} disabled={starting}>
-			{starting ? 'Starting…' : 'Expand with subagent'}
+		<button class="primary" onclick={start} disabled={starting || running}>
+			{running ? 'Running…' : starting ? 'Starting…' : 'Expand with subagent'}
 		</button>
 	</div>
 

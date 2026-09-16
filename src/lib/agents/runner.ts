@@ -1,19 +1,40 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 
-import { createAgentTask, finishAgentTask, updateItem, getAgentTask, getItem } from '../store.js';
+import {
+	createAgentTask,
+	finishAgentTask,
+	updateItem,
+	getRunningAgentTaskForItem,
+	getItem,
+	StoreError
+} from '../store.js';
 import { repoRoot, type AgentTask } from '../db.js';
 
 export interface ActiveTask {
 	id: string;
+	item_id: string | null;
 	proc: ChildProcess | null;
 	emitter: EventEmitter;
 	transcript: string;
 	raw: string;
 	sessionId: string | null;
+	timeout: NodeJS.Timeout | null;
+	exited: boolean;
+	finished: boolean;
+	timedOut: boolean;
 }
 
 const active = new Map<string, ActiveTask>();
+
+const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+const KILL_ESCALATION_MS = 5000;
+
+function agentTimeoutMs(): number {
+	const raw = process.env.BUILDBOARD_AGENT_TIMEOUT_MS;
+	const n = raw ? Number(raw) : NaN;
+	return Number.isFinite(n) && n > 0 ? n : DEFAULT_TIMEOUT_MS;
+}
 
 export function agentDir(): string {
 	return process.env.BUILDBOARD_AGENT_DIR ?? repoRoot();
@@ -39,15 +60,29 @@ export function startAgentTask(input: {
 	agent?: string | null;
 	model?: string | null;
 }): AgentTask {
+	if (input.item_id) {
+		if ([...active.values()].some((e) => e.item_id === input.item_id)) {
+			throw new StoreError(409, 'agent task already running for this item');
+		}
+		if (getRunningAgentTaskForItem(input.item_id)) {
+			throw new StoreError(409, 'agent task already running for this item');
+		}
+	}
+
 	const task = createAgentTask(input);
 	const emitter = new EventEmitter();
 	const entry: ActiveTask = {
 		id: task.id,
+		item_id: task.item_id,
 		proc: null,
 		emitter,
 		transcript: '',
 		raw: '',
-		sessionId: null
+		sessionId: null,
+		timeout: null,
+		exited: false,
+		finished: false,
+		timedOut: false
 	};
 	active.set(task.id, entry);
 
@@ -56,16 +91,37 @@ export function startAgentTask(input: {
 	if (input.model) args.push('--model', input.model);
 	args.push('--dir', agentDir(), input.prompt);
 
-	const proc = spawn('opencode', args, {
+	const spawnOptions: SpawnOptions = {
 		cwd: agentDir(),
 		env: { ...process.env, NO_COLOR: '1', TERM: 'dumb' },
-		stdio: ['ignore', 'pipe', 'pipe']
-	});
+		stdio: ['ignore', 'pipe', 'pipe'],
+		// Own process group so a hung child and its descendants can be killed together.
+		detached: true
+	};
+	const overrideCmd = process.env.BUILDBOARD_AGENT_CMD;
+	const proc = overrideCmd
+		? spawn('sh', ['-c', overrideCmd, ...args], spawnOptions)
+		: spawn('opencode', args, spawnOptions);
 	entry.proc = proc;
+
+	const timeoutMs = agentTimeoutMs();
+	const timeoutNote = `[timed out after ${timeoutMs}ms]`;
+	entry.timeout = setTimeout(() => {
+		entry.transcript += `\n\n${timeoutNote}`;
+		entry.timedOut = true;
+		killEscalating(entry);
+	}, timeoutMs);
 
 	let lineBuffer = '';
 
-	proc.stdout.on('data', (data: Buffer) => {
+	const stdout = proc.stdout;
+	const stderr = proc.stderr;
+	if (!stdout || !stderr) {
+		finalize(entry, 'failed', { error: 'agent stdio unavailable' });
+		return task;
+	}
+
+	stdout.on('data', (data: Buffer) => {
 		lineBuffer += data.toString('utf8');
 		let idx: number;
 		while ((idx = lineBuffer.indexOf('\n')) >= 0) {
@@ -86,29 +142,88 @@ export function startAgentTask(input: {
 		}
 	});
 
-	proc.stderr.on('data', (data: Buffer) => {
+	stderr.on('data', (data: Buffer) => {
 		entry.raw += `[stderr] ${data.toString('utf8')}`;
 	});
 
+	proc.on('exit', () => {
+		entry.exited = true;
+	});
+
 	proc.on('error', (err) => {
-		finishTask(entry, task.item_id, 'failed');
-		emitter.emit('done', { status: 'failed', error: err.message });
+		finalize(entry, 'failed', { error: err.message });
 	});
 
 	proc.on('close', (code) => {
-		finishTask(entry, task.item_id, code === 0 ? 'succeeded' : 'failed');
-		emitter.emit('done', { status: code === 0 ? 'succeeded' : 'failed', code });
+		entry.exited = true;
+		const status = code === 0 ? 'succeeded' : 'failed';
+		finalize(
+			entry,
+			status,
+			entry.timedOut ? { code, note: timeoutNote } : { code }
+		);
 	});
 
 	return task;
 }
 
-function finishTask(entry: ActiveTask, item_id: string | null, status: 'succeeded' | 'failed' | 'canceled'): void {
+/**
+ * Send SIGTERM to the child's whole process group, then SIGKILL after ~5s
+ * if any member is still alive. Both cancel and timeout go through here;
+ * the `exited` flag (set from the child's exit event) plus a group-liveness
+ * probe prevent signaling an already-dead process.
+ */
+function killEscalating(entry: ActiveTask): void {
+	const proc = entry.proc;
+	if (!proc) return;
+	const pid = proc.pid;
+	if (pid == null) return;
+	const groupAlive = (): boolean => {
+		try {
+			process.kill(-pid, 0);
+			return true;
+		} catch {
+			return false;
+		}
+	};
+	if (entry.exited && !groupAlive()) return;
+	try {
+		process.kill(-pid, 'SIGTERM');
+	} catch {
+		proc.kill('SIGTERM');
+	}
+	setTimeout(() => {
+		if (groupAlive()) {
+			try {
+				process.kill(-pid, 'SIGKILL');
+			} catch {
+				proc.kill('SIGKILL');
+			}
+		}
+	}, KILL_ESCALATION_MS).unref();
+}
+
+/**
+ * Finalize a task exactly once: persist the outcome, clear the timeout,
+ * drop the in-memory entry, and emit the single 'done' event.
+ */
+function finalize(
+	entry: ActiveTask,
+	status: 'succeeded' | 'failed' | 'canceled',
+	extra: Record<string, unknown> = {}
+): void {
+	if (entry.finished) return;
+	entry.finished = true;
+	if (entry.timeout) {
+		clearTimeout(entry.timeout);
+		entry.timeout = null;
+	}
 	finishAgentTask(entry.id, status, entry.transcript || entry.raw || null);
-	if (item_id && status === 'succeeded' && entry.transcript) {
-		writeBack(item_id, entry.transcript);
+	if (entry.item_id && status === 'succeeded' && entry.transcript) {
+		writeBack(entry.item_id, entry.transcript);
 	}
 	active.delete(entry.id);
+	entry.emitter.emit('done', { status, ...extra });
 }
 
 /** Append the agent's output to the item's body so it lands on the board. */
@@ -127,8 +242,7 @@ function writeBack(item_id: string, transcript: string): void {
 export function cancelAgentTask(id: string): boolean {
 	const entry = active.get(id);
 	if (!entry) return false;
-	entry.proc?.kill('SIGTERM');
-	finishTask(entry, getAgentTask(id)?.item_id ?? null, 'canceled');
-	entry.emitter.emit('done', { status: 'canceled' });
+	killEscalating(entry);
+	finalize(entry, 'canceled');
 	return true;
 }
