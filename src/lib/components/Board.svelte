@@ -6,7 +6,7 @@
 	import Palette from '$lib/components/Palette.svelte';
 	import DetailPanel from '$lib/components/DetailPanel.svelte';
 	import { api } from '$lib/api.js';
-	import type { Item, ItemKind } from '$lib/db.js';
+	import type { Item, ItemKind } from '$lib/types.js';
 
 	type BoardNode = Node<{ item: Item }>;
 

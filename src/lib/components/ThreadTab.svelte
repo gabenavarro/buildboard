@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api.js';
-	import type { Item, Thread, Message } from '$lib/db.js';
+	import type { Item, Thread, Message } from '$lib/types.js';
 	import MarkdownView from './MarkdownView.svelte';
 
 	let { item }: { item: Item } = $props();

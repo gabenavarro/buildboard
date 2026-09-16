@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { Item, AgentTask } from '$lib/db.js';
+	import type { Item, AgentTask } from '$lib/types.js';
 
 	let { item }: { item: Item } = $props();
 

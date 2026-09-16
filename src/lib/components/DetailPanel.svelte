@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api.js';
-	import type { Item, ItemKind, ItemStatus } from '$lib/db.js';
+	import type { Item, ItemKind, ItemStatus } from '$lib/types.js';
 	import ThreadTab from './ThreadTab.svelte';
 	import DecisionTab from './DecisionTab.svelte';
 	import MarkdownView from './MarkdownView.svelte';

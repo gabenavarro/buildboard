@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ItemKind } from '$lib/db.js';
+	import type { ItemKind } from '$lib/types.js';
 
 	let { onCreate }: { onCreate: (kind: ItemKind, client: { x: number; y: number }) => void } = $props();
 

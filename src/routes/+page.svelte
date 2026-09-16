@@ -4,7 +4,7 @@
 
 	import Board from '$lib/components/Board.svelte';
 	import { api } from '$lib/api.js';
-	import type { BoardWithCount } from '$lib/db.js';
+	import type { BoardWithCount } from '$lib/types.js';
 
 	const BOARD_KEY = 'buildboard:board';
 

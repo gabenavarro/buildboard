@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api.js';
-	import type { Item, Concept } from '$lib/db.js';
+	import type { Item, Concept } from '$lib/types.js';
 
 	let { item }: { item: Item } = $props();
 
