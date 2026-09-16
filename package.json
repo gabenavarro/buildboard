@@ -1,52 +1,52 @@
 {
-  "name": "buildboard",
-  "private": true,
-  "version": "0.0.1",
-  "type": "module",
-  "engines": {
-    "node": ">=22.5"
-  },
-  "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
-    "preview": "vite preview",
-    "prepare": "svelte-kit sync || echo ''",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "lint": "eslint .",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "seed": "node --experimental-strip-types scripts/seed.ts",
-    "seed:reset": "npm run db:reset && npm run seed",
-    "db:reset": "node scripts/db.mjs reset",
-    "db:backup": "node scripts/db.mjs backup",
-    "mcp:build": "esbuild src/mcp/server.ts --bundle --platform=node --format=esm --outfile=dist/mcp/server.mjs",
-    "mcp": "npm run mcp:build && node dist/mcp/server.mjs",
-    "e2e": "node scripts/e2e.mjs"
-  },
-  "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@sveltejs/adapter-auto": "^7.0.1",
-    "@sveltejs/kit": "^2.63.0",
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@types/node": "^22",
-    "esbuild": "^0.28.2",
-    "eslint": "^10.4.1",
-    "eslint-plugin-svelte": "^3.19.0",
-    "globals": "^17.6.0",
-    "playwright": "^1.63.0",
-    "svelte": "^5.56.1",
-    "svelte-check": "^4.6.0",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.60.1",
-    "vite": "^8.0.16",
-    "vitest": "^5.0.1"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@sveltejs/adapter-node": "^5.5.7",
-    "@xyflow/svelte": "^1.6.6",
-    "marked": "^18.0.13",
-    "zod": "^4.6.5"
-  }
+	"name": "buildboard",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"engines": {
+		"node": ">=22.5"
+	},
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"lint": "eslint .",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"seed": "node --experimental-strip-types scripts/seed.ts",
+		"seed:reset": "npm run db:reset && npm run seed",
+		"db:reset": "node scripts/db.mjs reset",
+		"db:backup": "node scripts/db.mjs backup",
+		"mcp:build": "esbuild src/mcp/server.ts --bundle --platform=node --format=esm --outfile=dist/mcp/server.mjs",
+		"mcp": "npm run mcp:build && node dist/mcp/server.mjs",
+		"e2e": "node scripts/e2e.mjs"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.1",
+		"@sveltejs/adapter-auto": "^7.0.1",
+		"@sveltejs/kit": "^2.63.0",
+		"@sveltejs/vite-plugin-svelte": "^7.1.2",
+		"@types/node": "^22",
+		"esbuild": "^0.28.2",
+		"eslint": "^10.4.1",
+		"eslint-plugin-svelte": "^3.19.0",
+		"globals": "^17.6.0",
+		"playwright": "^1.63.0",
+		"svelte": "^5.56.1",
+		"svelte-check": "^4.6.0",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.60.1",
+		"vite": "^8.0.16",
+		"vitest": "^5.0.1"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.30.0",
+		"@sveltejs/adapter-node": "^5.5.7",
+		"@xyflow/svelte": "^1.6.6",
+		"marked": "^18.0.13",
+		"zod": "^4.6.5"
+	}
 }
