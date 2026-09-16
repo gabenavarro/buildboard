@@ -1,4 +1,5 @@
 import type {
+	SearchHit,
 	Item,
 	Edge,
 	ItemKind,
@@ -110,6 +111,12 @@ export const api = {
 		request<AgentTask>('/api/agent-tasks', { method: 'POST', body: JSON.stringify(input) }),
 	cancelAgentTask: (id: string) => request<{ ok: boolean }>(`/api/agent-tasks/${id}`, { method: 'POST' }),
 
+	search: (q: string, board?: string) => {
+		const params = new URLSearchParams({ q });
+		if (board) params.set('board', board);
+		return request<{ query: string; count: number; hits: SearchHit[] }>(`/api/search?${params.toString()}`);
+	},
+
 	listBoards: () => request<BoardWithCount[]>('/api/boards'),
 	createBoard: (name: string) =>
 		request<Board>('/api/boards', { method: 'POST', body: JSON.stringify({ name }) }),
@@ -129,5 +136,6 @@ export type {
 	Concept,
 	AgentTask,
 	Board,
-	BoardWithCount
+	BoardWithCount,
+	SearchHit
 };
