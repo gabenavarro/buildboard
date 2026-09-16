@@ -679,9 +679,21 @@ export function createAgentTask(input: {
 	return db.prepare('SELECT * FROM agent_tasks WHERE id = ?').get(id) as unknown as AgentTask;
 }
 
-export function listAgentTasks(limit = 50): AgentTask[] {
+export function listAgentTasks(limit = 50, filter: { item_id?: string; status?: string } = {}): AgentTask[] {
 	const db = getDb();
-	return db.prepare('SELECT * FROM agent_tasks ORDER BY created_at DESC LIMIT ?').all(limit) as unknown as AgentTask[];
+	const where: string[] = [];
+	const params: (string | number)[] = [];
+	if (filter.item_id) {
+		where.push('item_id = ?');
+		params.push(filter.item_id);
+	}
+	if (filter.status) {
+		where.push('status = ?');
+		params.push(filter.status);
+	}
+	params.push(limit);
+	const sql = `SELECT * FROM agent_tasks ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY created_at DESC LIMIT ?`;
+	return db.prepare(sql).all(...params) as unknown as AgentTask[];
 }
 
 export function getAgentTask(id: string): AgentTask | null {
