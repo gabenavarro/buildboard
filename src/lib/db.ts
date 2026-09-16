@@ -15,6 +15,8 @@ export interface Board {
 	created_at: string;
 }
 
+export type BoardWithCount = Board & { item_count: number };
+
 export interface Item {
 	id: string;
 	kind: ItemKind;

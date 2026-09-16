@@ -12,7 +12,8 @@ import type {
 	Concept,
 	AgentTask,
 	AgentTaskStatus,
-	Board
+	Board,
+	BoardWithCount
 } from './db.js';
 
 /**
@@ -719,9 +720,17 @@ export function finishAgentTask(id: string, status: AgentTaskStatus, transcript?
 
 // ---------- boards ----------
 
-export function listBoards(): Board[] {
+export function listBoards(): BoardWithCount[] {
 	const db = getDb();
-	return db.prepare('SELECT * FROM boards ORDER BY created_at').all() as unknown as Board[];
+	return db
+		.prepare(
+			`SELECT b.*, COUNT(i.id) AS item_count
+			 FROM boards b
+			 LEFT JOIN items i ON i.board_id = b.id
+			 GROUP BY b.id
+			 ORDER BY b.created_at`
+		)
+		.all() as unknown as BoardWithCount[];
 }
 
 export function getBoard(id: string): Board | null {
