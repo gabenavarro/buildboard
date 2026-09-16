@@ -29,11 +29,21 @@ Production build (node adapter):
 
 ```sh
 npm run build
-node build/index.js
+node build/index.js   # serves on http://localhost:3000
 ```
 
 The SQLite database lives at `data/buildboard.db` relative to the buildboard repo root
 (override with `BUILDBOARD_DB`).
+
+Environment variables (all optional, see `.env.example`):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `BUILDBOARD_DB` | `data/buildboard.db` | SQLite database file |
+| `BUILDBOARD_AGENT_DIR` | buildboard repo root | Working dir for spawned subagents |
+| `BUILDBOARD_AGENT_CMD` | `opencode run --format json` | Shell command used to run a subagent |
+| `BUILDBOARD_AGENT_TIMEOUT_MS` | `600000` | Hard timeout for a subagent run |
+| `BUILDBOARD_AGENT_KILL_MS` | `5000` | SIGTERM→SIGKILL escalation delay on cancel/timeout |
 
 ## API (v1)
 
@@ -51,6 +61,8 @@ Item/edge endpoints accept `?board=<id>` to scope to a board (default `default`)
 | GET | `/api/items/:id` | Get one item |
 | PATCH | `/api/items/:id` | Update item fields |
 | DELETE | `/api/items/:id` | Delete item |
+| POST | `/api/items/:id/duplicate` | Copy an item (same board, or `board_id` / `title_suffix`) |
+| POST | `/api/items/:id/move` | Move an item to another board (`board_id`) |
 | GET | `/api/edges` | List edges |
 | POST | `/api/edges` | Create edge |
 | DELETE | `/api/edges/:id` | Delete edge |
@@ -59,6 +71,7 @@ Item/edge endpoints accept `?board=<id>` to scope to a board (default `default`)
 | DELETE | `/api/threads/:id` | Delete thread |
 | GET | `/api/threads/:id/messages` | List messages in a thread |
 | POST | `/api/threads/:id/messages` | Post a message |
+| DELETE | `/api/threads/:id/messages/:mid` | Delete a message |
 | GET | `/api/decisions` | List decisions (`?item_id=&status=`) |
 | POST | `/api/decisions` | Record a decision |
 | PATCH | `/api/decisions/:id` | Update/supersede a decision |
@@ -67,7 +80,7 @@ Item/edge endpoints accept `?board=<id>` to scope to a board (default `default`)
 | POST | `/api/concepts` | Create a concept |
 | PATCH | `/api/concepts/:id` | Update a concept |
 | DELETE | `/api/concepts/:id` | Delete a concept |
-| GET | `/api/search` | Full-text search (`?q=&limit=&source=`) |
+| GET | `/api/search` | Full-text search (`?q=&limit=&source=&board=`) |
 | GET | `/api/brief` | Compact context digest (~200 tokens) |
 | GET | `/api/agent-tasks` | List agent tasks (`?item_id=&limit=`) |
 | POST | `/api/agent-tasks` | Spawn a subagent (`item_id` and/or `prompt`, `agent`, `model`) |
@@ -96,9 +109,15 @@ Permissions are never auto-approved — a running subagent behaves like an ordin
 buildboard ships a stdio MCP server so your opencode session can read/write the board
 directly during a conversation.
 
-Tools: `bb_brief`, `bb_search`, `bb_item_list`, `bb_item_get`, `bb_item_upsert`,
-`bb_edge_add`, `bb_decision_add`, `bb_decision_list`, `bb_message_add`, `bb_messages`,
-`bb_spawn_agent`.
+Tools (31):
+
+- **Board** — `bb_brief`, `bb_search`, `bb_board_list`, `bb_board_create`, `bb_board_rename`, `bb_board_delete`
+- **Items** — `bb_item_list`, `bb_item_get`, `bb_item_upsert`, `bb_item_update`, `bb_item_delete`, `bb_item_duplicate`
+- **Edges** — `bb_edge_add`, `bb_edge_list`, `bb_edge_update`, `bb_edge_delete`
+- **Decisions** — `bb_decision_add`, `bb_decision_list`, `bb_decision_update`, `bb_decision_delete`
+- **Concepts** — `bb_concept_list`, `bb_concept_get`, `bb_concept_add`, `bb_concept_update`, `bb_concept_delete`
+- **Threads** — `bb_message_add`, `bb_messages`
+- **Agents** — `bb_spawn_agent`, `bb_agent_task_get`, `bb_agent_tasks`, `bb_cancel_agent`
 
 Register it in your `opencode.json` (or the project's `opencode.json`):
 
@@ -135,6 +154,7 @@ database.
 | `npm run seed:reset` | Delete the database, then seed a fresh demo board |
 | `npm run db:reset` | Delete `data/buildboard.db` + `-wal`/`-shm` sidecars |
 | `npm run db:backup` | Copy the database to `data/backups/buildboard-<timestamp>.db*` |
+| `npm run e2e` | Local Playwright rendering smoke test (not run in CI) |
 
 `npm run db:backup` is a plain file copy of the database (and its WAL/SHM
 sidecars, if present). It is only safe when no writer is active — stop the
