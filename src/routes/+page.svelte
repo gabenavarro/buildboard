@@ -3,17 +3,41 @@
 	import { SvelteFlowProvider } from '@xyflow/svelte';
 
 	import Board from '$lib/components/Board.svelte';
-	import SearchBox from '$lib/components/SearchBox.svelte';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import { api } from '$lib/api.js';
 	import { toast } from '$lib/toast.js';
-	import type { BoardWithCount, SearchHit } from '$lib/types.js';
+	import { theme, toggleTheme } from '$lib/theme.js';
+	import type { BoardWithCount, ItemKind, SearchHit } from '$lib/types.js';
 
 	const BOARD_KEY = 'buildboard:board';
 
 	let boards = $state<BoardWithCount[]>([]);
 	let currentBoardId = $state('default');
 	let booting = $state(true);
+	let toggleBtn = $state<HTMLButtonElement | null>(null);
+	const boardActions = { fitView: undefined as (() => void) | undefined, export: undefined as (() => void) | undefined, create: undefined as ((k: ItemKind) => void) | undefined };
+
+	function switchTheme() {
+		const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const next = $theme === 'light' ? 'dark' : 'light';
+		if (reduce) {
+			toggleTheme();
+			return;
+		}
+		const r = toggleBtn?.getBoundingClientRect();
+		const x = r ? r.left + r.width / 2 : window.innerWidth - 24;
+		const y = r ? r.top + r.height / 2 : 24;
+		const veil = document.createElement('div');
+		veil.className = 'theme-veil';
+		veil.style.background = next === 'light' ? '#f4f6fb' : '#0a0d14';
+		veil.style.setProperty('--vx', `${x}px`);
+		veil.style.setProperty('--vy', `${y}px`);
+		document.body.appendChild(veil);
+		requestAnimationFrame(() => requestAnimationFrame(() => veil.classList.add('on')));
+		setTimeout(() => toggleTheme(), 260);
+		setTimeout(() => veil.remove(), 620);
+	}
 	let renaming = $state(false);
 	let focusItem = $state<string | null>(null);
 	let renameName = $state('');
@@ -131,7 +155,16 @@
 			<span>buildboard</span>
 		</div>
 
-		<SearchBox boardId={currentBoardId} {boards} onselect={handleSearchSelect} />
+		<CommandPalette
+			boards={boards}
+			onselectboard={(id) => (currentBoardId = id)}
+			onfocusitem={handleSearchSelect}
+			onnewitem={(k) => boardActions.create?.(k)}
+			onnewboard={() => newBoard()}
+			onfitview={() => boardActions.fitView?.()}
+			onexport={() => boardActions.export?.()}
+			onthemetoggle={() => switchTheme()}
+		/>
 
 		<div class="boards" role="group" aria-label="Board">
 			{#if renaming}
@@ -161,11 +194,14 @@
 			{#if currentBoardId !== 'default'}
 				<button class="ghost" onclick={() => removeBoard(currentBoardId)} title="Delete board" aria-label="Delete board">✕</button>
 			{/if}
+			<button class="ghost" bind:this={toggleBtn} onclick={switchTheme} title="Toggle light/dark theme" aria-label="Toggle light/dark theme" aria-pressed={$theme === 'light'}>
+				{$theme === 'light' ? '☾' : '☀'}
+			</button>
 		</div>
 	</header>
 
 	<SvelteFlowProvider>
-		<Board boardId={currentBoardId} boards={boards} focusItem={focusItem} onfocusconsumed={() => (focusItem = null)} onitemchanged={() => void loadBoards()} />
+		<Board boardId={currentBoardId} boards={boards} focusItem={focusItem} onfocusconsumed={() => (focusItem = null)} onitemchanged={() => void loadBoards()} actions={boardActions} />
 	</SvelteFlowProvider>
 
 	<Toast />

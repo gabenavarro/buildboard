@@ -175,6 +175,25 @@ try {
   await page.waitForTimeout(500);
   check('toast appears after create', (await page.locator('.toast').count()) >= 1);
 
+  // Command palette opens on Ctrl+K.
+  await page.keyboard.press('Control+KeyK');
+  await page.waitForTimeout(400);
+  check('command palette opens', (await page.locator('.cmd').count()) === 1);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+
+  // Theme toggle: switches to light and updates the root.
+  await page.locator('.boards button[aria-label="Toggle light/dark theme"]').click();
+  await page.waitForTimeout(800);
+  const lightRoot = await page.evaluate(() => document.documentElement.dataset.theme);
+  const lightBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  check('theme switches to light', lightRoot === 'light', lightRoot);
+  check('light background applied', lightBg.startsWith('rgb(244') || lightBg.startsWith('rgba(244'), lightBg);
+  await page.screenshot({ path: path.join(SHOTS, 'u11-light.png') });
+  console.log(`screenshot: ${path.join(SHOTS, 'u11-light.png')}`);
+  await page.locator('.boards button[aria-label="Toggle light/dark theme"]').click();
+  await page.waitForTimeout(800);
+
   // Empty state: switch to a fresh empty board.
   await (await fetch(BASE + '/api/boards', {
     method: 'POST',

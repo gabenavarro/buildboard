@@ -17,14 +17,22 @@
 		boards = [],
 		focusItem = null,
 		onfocusconsumed,
-		onitemchanged
+		onitemchanged,
+		actions
 	}: {
 		boardId: string;
 		boards?: BoardWithCount[];
 		focusItem?: string | null;
 		onfocusconsumed?: () => void;
 		onitemchanged?: () => void;
+		actions: { fitView?: () => void; export?: () => void; create?: (kind: ItemKind) => void };
 	} = $props();
+
+	$effect(() => {
+		actions.fitView = () => void fitView();
+		actions.export = () => exportMarkdown();
+		actions.create = (kind: ItemKind) => void handleCreate(kind, { x: 0, y: 0 });
+	});
 
 	let nodes = $state<BoardNode[]>([]);
 	let edges = $state<Edge[]>([]);
