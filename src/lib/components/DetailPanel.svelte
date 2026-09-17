@@ -106,7 +106,7 @@
 	<header>
 		<span class="head-left">
 			<span class="eyebrow">item</span>
-			{#if dirty}<span class="unsaved">● unsaved</span>{/if}
+			{#if dirty}<span class="unsaved" aria-live="polite">● unsaved</span>{/if}
 		</span>
 		<button class="icon" onclick={onclose} aria-label="Close">✕</button>
 	</header>
@@ -203,8 +203,11 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-		background: var(--bg-raise);
-		border-left: 1px solid var(--border);
+		background: var(--glass);
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		border-left: 1px solid var(--border-soft);
+		box-shadow: var(--shadow-2);
 		padding: 16px;
 		height: 100%;
 		min-height: 0;
@@ -220,9 +223,10 @@
 		gap: 8px;
 	}
 	.eyebrow {
+		font-family: var(--font-display);
 		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.1em;
+		font-weight: 600;
+		letter-spacing: 0.02em;
 		color: var(--text-dim);
 	}
 	.unsaved {
@@ -249,6 +253,10 @@
 		padding: 6px 4px;
 		font-size: 12px;
 		color: var(--text-dim);
+		transition: color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+	}
+	.tabs button:hover {
+		color: var(--text);
 	}
 	.tabs button.active {
 		color: var(--text);
