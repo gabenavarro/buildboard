@@ -7,9 +7,10 @@
 	import DetailPanel from '$lib/components/DetailPanel.svelte';
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
 	import { api } from '$lib/api.js';
+	import { toast } from '$lib/toast.js';
 	import type { Item, ItemKind, BoardWithCount } from '$lib/types.js';
 
-	type BoardNode = Node<{ item: Item }>;
+	type BoardNode = Node<{ item: Item; i: number }>;
 
 	let {
 		boardId,
@@ -64,11 +65,11 @@
 				api.listItems({ board: boardId }),
 				api.listEdges().then((all) => all.filter((e) => e.board_id === boardId))
 			]);
-			nodes = items.map((item) => ({
+			nodes = items.map((item, i) => ({
 				id: item.id,
 				type: 'item',
 				position: { x: item.x, y: item.y },
-				data: { item }
+				data: { item, i }
 			}));
 			edges = edgeList.map((e) => ({
 				id: e.id,
@@ -126,10 +127,11 @@
 		});
 		nodes = [
 			...nodes,
-			{ id: item.id, type: 'item', position: { x: item.x, y: item.y }, data: { item } }
+			{ id: item.id, type: 'item', position: { x: item.x, y: item.y }, data: { item, i: nodes.length } }
 		];
 		selected = item;
 		justCreatedId = item.id;
+		toast('success', `${item.kind} added`);
 	}
 
 	async function handleCreate(kind: ItemKind, client: { x: number; y: number }) {
@@ -165,10 +167,12 @@
 				// item left the current board — drop the node
 				nodes = nodes.filter((n) => n.id !== item.id);
 				if (selected?.id === item.id) selected = null;
+				const dest = boards.find((b) => b.id === targetBoardId)?.name ?? 'another board';
+				toast('success', `Moved to “${dest}”`);
 			}
 			onitemchanged?.();
 		} catch (e) {
-			console.error(e);
+			toast('error', e instanceof Error ? e.message : 'move failed');
 		}
 	}
 
@@ -178,12 +182,13 @@
 			if (copy.board_id === boardId) {
 				nodes = [
 					...nodes,
-					{ id: copy.id, type: 'item', position: { x: copy.x, y: copy.y }, data: { item: copy } }
+					{ id: copy.id, type: 'item', position: { x: copy.x, y: copy.y }, data: { item: copy, i: nodes.length } }
 				];
 			}
+			toast('success', 'Duplicated');
 			onitemchanged?.();
 		} catch (e) {
-			console.error(e);
+			toast('error', e instanceof Error ? e.message : 'duplicate failed');
 		}
 	}
 
@@ -295,8 +300,9 @@
 	async function handleDeleted(id: string) {
 		await api.deleteItem(id).catch((e) => console.error(e));
 		nodes = nodes.filter((n) => n.id !== id);
-		edges = edges.filter((e) => e.source !== id && e.target !== id);
+		edges = edges.filter((e) => e.source !== id || e.target !== id);
 		selected = null;
+		toast('success', 'Item deleted');
 		onitemchanged?.();
 	}
 

@@ -4,13 +4,16 @@
 
 	import Board from '$lib/components/Board.svelte';
 	import SearchBox from '$lib/components/SearchBox.svelte';
+	import Toast from '$lib/components/Toast.svelte';
 	import { api } from '$lib/api.js';
+	import { toast } from '$lib/toast.js';
 	import type { BoardWithCount, SearchHit } from '$lib/types.js';
 
 	const BOARD_KEY = 'buildboard:board';
 
 	let boards = $state<BoardWithCount[]>([]);
 	let currentBoardId = $state('default');
+	let booting = $state(true);
 	let renaming = $state(false);
 	let focusItem = $state<string | null>(null);
 	let renameName = $state('');
@@ -29,6 +32,7 @@
 	}
 
 	onMount(async () => {
+		const started = Date.now();
 		try {
 			boards = await api.listBoards();
 			const stored = localStorage.getItem(BOARD_KEY);
@@ -36,6 +40,9 @@
 		} catch (e) {
 			console.error(e);
 		}
+		// Brief branded preloader: never flash, never hang.
+		const wait = Math.max(0, 400 - (Date.now() - started));
+		setTimeout(() => (booting = false), wait);
 	});
 
 	async function newBoard() {
@@ -56,6 +63,7 @@
 			currentBoardId = b.id;
 			await loadBoards();
 			modal = null;
+			toast('success', `Board “${name}” created`);
 		} catch (e) {
 			modalError = e instanceof Error ? e.message : 'failed to create board';
 		}
@@ -71,9 +79,11 @@
 		const id = currentBoardId;
 		try {
 			await api.deleteBoard(id);
+			const deleted = boards.find((b) => b.id === id)?.name ?? 'Board';
 			if (currentBoardId === id) currentBoardId = 'default';
 			await loadBoards();
 			modal = null;
+			toast('success', `Board “${deleted}” deleted`);
 		} catch (e) {
 			modalError = e instanceof Error ? e.message : 'failed to delete board';
 		}
@@ -107,8 +117,9 @@
 		try {
 			const renamed = await api.renameBoard(currentBoardId, name);
 			boards = boards.map((b) => (b.id === renamed.id ? { ...b, name: renamed.name } : b));
+			toast('success', 'Board renamed');
 		} catch (e) {
-			alert(e instanceof Error ? e.message : 'failed to rename board');
+			toast('error', e instanceof Error ? e.message : 'failed to rename board');
 		}
 	}
 </script>
@@ -156,6 +167,16 @@
 	<SvelteFlowProvider>
 		<Board boardId={currentBoardId} boards={boards} focusItem={focusItem} onfocusconsumed={() => (focusItem = null)} onitemchanged={() => void loadBoards()} />
 	</SvelteFlowProvider>
+
+	<Toast />
+
+	{#if booting}
+		<div class="boot" aria-hidden="true">
+			<span class="boot-logo">◆</span>
+			<span class="boot-name">buildboard</span>
+			<span class="boot-bar"><span class="boot-fill"></span></span>
+		</div>
+	{/if}
 
 	{#if modal}
 		<div class="backdrop" onmousedown={() => (modal = null)}>
@@ -273,6 +294,52 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
+		animation: bb-modal-in var(--t-med) var(--ease-spring);
+	}
+	.boot {
+		position: fixed;
+		inset: 0;
+		z-index: 200;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 12px;
+		background: var(--bg);
+	}
+	.boot-logo {
+		font-size: 30px;
+		color: var(--accent);
+		text-shadow: 0 0 24px var(--accent-glow);
+	}
+	.boot-name {
+		font-family: var(--font-display);
+		font-weight: 700;
+		font-size: 18px;
+		letter-spacing: -0.01em;
+	}
+	.boot-bar {
+		width: 140px;
+		height: 3px;
+		border-radius: 2px;
+		background: var(--bg-raise-2);
+		overflow: hidden;
+	}
+	.boot-fill {
+		display: block;
+		height: 100%;
+		width: 40%;
+		border-radius: 2px;
+		background: var(--accent);
+		animation: bb-boot-slide 1.1s var(--ease-out) infinite;
+	}
+	@keyframes bb-boot-slide {
+		from {
+			transform: translateX(-120%);
+		}
+		to {
+			transform: translateX(320%);
+		}
 	}
 	.modal h3 {
 		font-size: 14px;
