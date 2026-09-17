@@ -80,6 +80,7 @@
 		z-index: 41;
 		min-width: 190px;
 		max-width: 240px;
+		animation: bb-menu-in 140ms var(--ease-out);
 		background: var(--glass-strong);
 		backdrop-filter: var(--glass-blur);
 		-webkit-backdrop-filter: var(--glass-blur);

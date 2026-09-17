@@ -6,6 +6,7 @@
 	import MarkdownView from './MarkdownView.svelte';
 	import ConceptTab from './ConceptTab.svelte';
 	import AgentTab from './AgentTab.svelte';
+	import { toast } from '$lib/toast.js';
 
 	let {
 		item,
@@ -71,8 +72,10 @@
 				.filter((t) => t.length > 0);
 			const updated = await api.updateItem(item.id, { title, kind, status, tags, body_md: bodyMd });
 			onupdated(updated);
+			toast('success', 'Saved');
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to save';
+			toast('error', e instanceof Error ? e.message : 'Failed to save');
 		} finally {
 			saving = false;
 		}
@@ -211,6 +214,7 @@
 		padding: 16px;
 		height: 100%;
 		min-height: 0;
+		animation: bb-panel-in var(--t-slow) var(--ease-out);
 	}
 	header {
 		display: flex;

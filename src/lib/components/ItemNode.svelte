@@ -5,9 +5,20 @@
 	import { ITEM_STATUSES } from '$lib/types.js';
 	import { api } from '$lib/api.js';
 
-	let { data } = $props();
-	const item = $derived((data as { item: Item }).item);
+	let { data }: { data: { item: Item; i: number } } = $props();
+	const item = $derived(data.item);
 	const onstatus = getContext<((item: Item) => void) | undefined>('board:statuschange');
+
+	let prevStatus = $state(item.status);
+	let pulsing = $state(false);
+	$effect(() => {
+		if (item.status !== prevStatus) {
+			prevStatus = item.status;
+			pulsing = true;
+			const t = setTimeout(() => (pulsing = false), 400);
+			return () => clearTimeout(t);
+		}
+	});
 
 	function cycleStatus(e: MouseEvent) {
 		e.stopPropagation();
@@ -54,7 +65,7 @@
 
 <div
 	class="card {item.status === 'done' ? 'is-done' : ''} {item.status === 'blocked' ? 'is-blocked' : ''}"
-	style="--kind: {kindColor(item.kind)}"
+	style="--kind: {kindColor(item.kind)}; --bb-i: {data.i}"
 >
 	<Handle type="target" position={Position.Top} />
 	<Handle type="target" position={Position.Left} />
@@ -64,7 +75,7 @@
 	<div class="head">
 		<span class="badge" style="background: {kindColor(item.kind)}">{item.kind}</span>
 		<button
-			class="status {statusClass(item.status)}"
+			class="status {statusClass(item.status)} {pulsing ? 'is-pulsing' : ''}"
 			title={item.status}
 			aria-label={`Status: ${item.status}. Click to cycle.`}
 			onclick={cycleStatus}
@@ -97,6 +108,8 @@
 			box-shadow var(--t-fast) var(--ease-out),
 			border-color var(--t-fast) var(--ease-out),
 			transform var(--t-fast) var(--ease-out);
+		animation: bb-node-in 260ms var(--ease-out) both;
+		animation-delay: calc(min(var(--bb-i, 0) * 22ms, 320ms));
 	}
 	.card:hover {
 		border-color: color-mix(in srgb, var(--kind) 55%, var(--border));
@@ -145,6 +158,9 @@
 	.status:hover {
 		background: var(--accent-soft);
 		border-color: var(--accent);
+	}
+	.status.is-pulsing {
+		animation: bb-pulse 400ms var(--ease-spring);
 	}
 	.title {
 		font-weight: 600;

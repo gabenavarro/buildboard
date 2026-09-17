@@ -165,6 +165,16 @@ try {
   await page.screenshot({ path: path.join(SHOTS, 'u9-dark.png') });
   console.log(`screenshot: ${path.join(SHOTS, 'u9-dark.png')}`);
 
+  // Motion: node entrance animation is declared on cards.
+  const anim = await card.evaluate((el) => getComputedStyle(el).animationName);
+  check('node entrance animation declared', anim !== 'none', anim);
+
+  // Feedback: creating an item via the palette surfaces a toast.
+  await page.locator('.palette > button').click();
+  await page.locator('.palette li button', { hasText: 'Note' }).click();
+  await page.waitForTimeout(500);
+  check('toast appears after create', (await page.locator('.toast').count()) >= 1);
+
   // Empty state: switch to a fresh empty board.
   await (await fetch(BASE + '/api/boards', {
     method: 'POST',
