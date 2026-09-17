@@ -1,8 +1,9 @@
 // Visual verification loop (Playwright). NOT run in CI.
-// Boots vite dev on a temp port with a throwaway DB and asserts the design
-// system actually renders: bundled fonts, glass surfaces, film grain, WCAG
-// contrast, node elevation, ambient glow, empty state. Captures a screenshot
-// for human review at /tmp/opencode/shots/. Exits non-zero on failure.
+// Boots vite dev on a temp port with a throwaway DB and asserts the calm
+// design system renders: light-by-default, solid (non-glass) chrome, no
+// film grain, no ambient glow, bundled Inter, node body preview, WCAG
+// contrast, command palette, theme toggle. Captures screenshots for human
+// review at /tmp/opencode/shots/. Exits non-zero on failure.
 import { chromium } from 'playwright';
 import { spawn, execSync } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
@@ -41,12 +42,12 @@ async function waitForServer(timeoutMs = 30000) {
   throw new Error('dev server did not start in time');
 }
 
-/** @param {string} title @param {string} kind @param {number} x @param {number} y */
-async function apiCreateItem(title, kind, x, y) {
+/** @param {string} title @param {string} kind @param {number} x @param {number} y @param {string} [body] */
+async function apiCreateItem(title, kind, x, y, body = '') {
   const res = await fetch(`${BASE}/api/items`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ title, kind, x, y, board_id: 'default' })
+    body: JSON.stringify({ title, kind, x, y, body_md: body, board_id: 'default' })
   });
   if (!res.ok) throw new Error(`POST /api/items failed: ${res.status} ${await res.text()}`);
   return res.json();
@@ -104,7 +105,7 @@ try {
 
   await waitForServer();
 
-  await apiCreateItem('Visual Alpha', 'note', 60, 60);
+  await apiCreateItem('Visual Alpha', 'note', 60, 60, 'A calm note body for preview');
   await apiCreateItem('Visual Beta', 'decision', 360, 60);
 
   browser = await chromium.launch();
@@ -119,39 +120,46 @@ try {
 
   check('no page errors', pageErrors.length === 0, pageErrors[0]?.slice(0, 160));
 
-  // Bundled variable fonts are actually loaded.
-  const fontsOk = await page.evaluate(() => {
-    document.fonts.ready.then(() => {});
-    return (
-      document.fonts.check('16px "Inter Variable"') && document.fonts.check('16px "Space Grotesk Variable"')
-    );
+  // Default theme is light (no dark persisted on a fresh profile).
+  const initialBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  check('light theme by default', initialBg === 'rgb(247, 248, 250)', initialBg);
+
+  // Bundled Inter variable font is loaded.
+  const fontsOk = await page.evaluate(() => document.fonts.check('16px "Inter Variable"'));
+  check('bundled font loaded (Inter)', fontsOk);
+
+  // Topbar is solid: no glass backdrop-filter, opaque background.
+  const topbar = await page.locator('.topbar').evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { blur: cs.backdropFilter, bg: cs.backgroundColor };
   });
-  check('bundled fonts loaded (Inter + Space Grotesk)', fontsOk);
+  check('topbar is solid (no backdrop-filter)', topbar.blur === 'none', topbar.blur);
+  check('topbar background opaque', !topbar.bg.startsWith('rgba(0, 0, 0, 0'), topbar.bg);
 
-  // Glass on the topbar.
-  const topbarBlur = await page.locator('.topbar').evaluate((el) => getComputedStyle(el).backdropFilter);
-  check('topbar uses glass backdrop-filter', /blur/.test(topbarBlur), topbarBlur);
-
-  // Film-grain overlay on body::after.
+  // No film-grain overlay.
   const grain = await page.evaluate(() => getComputedStyle(document.body, '::after').backgroundImage);
-  check('grain overlay present', grain !== 'none' && grain.includes('svg'), grain.slice(0, 40));
+  check('no grain overlay', grain === 'none', grain.slice(0, 40));
+
+  // No ambient glow behind the canvas.
+  const glow = await page.evaluate(() =>
+    getComputedStyle(/** @type {HTMLElement} */ (document.querySelector('.board')), '::before').background
+  );
+  check('no ambient glow on canvas', !glow.includes('gradient'), glow.slice(0, 40));
 
   // WCAG contrast: brand text vs page background (>= 4.5:1 for normal text).
   const ratio = await contrastRatio(page, '.brand', 'body');
   check('topbar text contrast >= 4.5:1', ratio >= 4.5, `ratio=${ratio.toFixed(2)}`);
 
-  // Node elevation: layered shadow (not flat/none).
-  const shadow = await page.locator('.svelte-flow__node .card').first().evaluate((el) => getComputedStyle(el).boxShadow);
-  check('node card has layered shadow', shadow !== 'none' && shadow.length > 10, shadow.slice(0, 40));
-
-  // Ambient glow behind the canvas.
-  const glow = await page.evaluate(() =>
-    getComputedStyle(/** @type {HTMLElement} */ (document.querySelector('.board')), '::before').background
-  );
-  check('ambient glow present on canvas', glow !== 'none' && glow.length > 0, glow.slice(0, 40));
-
-  // Hover: node card responds (transition on box-shadow/border is declared).
+  // Node card: solid raised surface with a shadow.
   const card = page.locator('.svelte-flow__node .card').first();
+  const shadow = await card.evaluate((el) => getComputedStyle(el).boxShadow);
+  check('node card has shadow', shadow !== 'none', shadow.slice(0, 40));
+
+  // Node body preview renders plain text.
+  const preview = await card.locator('.preview').first().textContent().catch(() => '');
+  check('node body preview renders', (preview || '').trim().length > 0, preview?.slice(0, 40));
+
+  // Hover: node card responds (shadow changes).
   /** @param {Element | null} el */
   const shadowOf = (el) => getComputedStyle(/** @type {HTMLElement} */ (el)).boxShadow;
   const before = await card.evaluate(shadowOf);
@@ -160,16 +168,15 @@ try {
   const after = await card.evaluate(shadowOf);
   check('node hover changes elevation', before !== after, 'no change');
 
-  // Screenshot for human review.
-  mkdirSync(SHOTS, { recursive: true });
-  await page.screenshot({ path: path.join(SHOTS, 'u9-dark.png') });
-  console.log(`screenshot: ${path.join(SHOTS, 'u9-dark.png')}`);
-
   // Motion: node entrance animation is declared on cards.
   const anim = await card.evaluate((el) => getComputedStyle(el).animationName);
-  check('node entrance animation declared', anim !== 'none', anim);
+  check('node entrance animation declared', anim === 'bb-fade-in', anim);
 
-  // Feedback: creating an item via the palette surfaces a toast.
+  mkdirSync(SHOTS, { recursive: true });
+  await page.screenshot({ path: path.join(SHOTS, 'u12-light.png') });
+  console.log(`screenshot: ${path.join(SHOTS, 'u12-light.png')}`);
+
+  // Feedback: creating an item via the palette surfaces a toast (top-right).
   await page.locator('.palette > button').click();
   await page.locator('.palette li button', { hasText: 'Note' }).click();
   await page.waitForTimeout(500);
@@ -182,17 +189,17 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(200);
 
-  // Theme toggle: switches to light and updates the root.
+  // Theme toggle: switches to dark and updates the root.
   await page.locator('.boards button[aria-label="Toggle light/dark theme"]').click();
-  await page.waitForTimeout(800);
-  const lightRoot = await page.evaluate(() => document.documentElement.dataset.theme);
-  const lightBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  check('theme switches to light', lightRoot === 'light', lightRoot);
-  check('light background applied', lightBg.startsWith('rgb(244') || lightBg.startsWith('rgba(244'), lightBg);
-  await page.screenshot({ path: path.join(SHOTS, 'u11-light.png') });
-  console.log(`screenshot: ${path.join(SHOTS, 'u11-light.png')}`);
+  await page.waitForTimeout(400);
+  const darkRoot = await page.evaluate(() => document.documentElement.dataset.theme);
+  const darkBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  check('theme switches to dark', darkRoot === 'dark', darkRoot);
+  check('dark background applied', darkBg === 'rgb(22, 24, 29)', darkBg);
+  await page.screenshot({ path: path.join(SHOTS, 'u12-dark.png') });
+  console.log(`screenshot: ${path.join(SHOTS, 'u12-dark.png')}`);
   await page.locator('.boards button[aria-label="Toggle light/dark theme"]').click();
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(400);
 
   // Empty state: switch to a fresh empty board.
   await (await fetch(BASE + '/api/boards', {
@@ -205,8 +212,8 @@ try {
   await page.locator('select').first().selectOption({ label: 'Visual Empty (0)' });
   await page.waitForTimeout(900);
   check('empty state card renders', (await page.locator('.empty-card').count()) === 1);
-  await page.screenshot({ path: path.join(SHOTS, 'u9-empty.png') });
-  console.log(`screenshot: ${path.join(SHOTS, 'u9-empty.png')}`);
+  await page.screenshot({ path: path.join(SHOTS, 'u12-empty.png') });
+  console.log(`screenshot: ${path.join(SHOTS, 'u12-empty.png')}`);
 
   clearTimeout(watchdog);
   if (process.exitCode === 0) console.log('\nVISUAL PASS');

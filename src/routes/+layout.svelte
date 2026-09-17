@@ -7,12 +7,12 @@
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	<meta name="theme-color" content="#0a0d14" />
+	<meta name="theme-color" content="#f7f8fa" />
 	<script>
-		// Apply persisted theme before first paint (no flash).
+		// Apply persisted theme before first paint (no flash). Light is the default.
 		try {
 			var t = localStorage.getItem('buildboard:theme');
-			if (t === 'light') document.documentElement.dataset.theme = t;
+			if (t === 'dark') document.documentElement.dataset.theme = t;
 		} catch (e) {
 			/* expected */
 		}

@@ -9,15 +9,17 @@
 	const item = $derived(data.item);
 	const onstatus = getContext<((item: Item) => void) | undefined>('board:statuschange');
 
-	let prevStatus = $state(item.status);
-	let pulsing = $state(false);
-	$effect(() => {
-		if (item.status !== prevStatus) {
-			prevStatus = item.status;
-			pulsing = true;
-			const t = setTimeout(() => (pulsing = false), 400);
-			return () => clearTimeout(t);
-		}
+	// One-line plain-text preview of the body markdown.
+	const preview = $derived.by(() => {
+		let t = item.body_md.replace(/```[\s\S]*?```/g, ' ');
+		t = t.replace(/`([^`]*)`/g, '$1');
+		t = t.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
+		t = t.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+		t = t.replace(/^[\s>#*+-]+/gm, '');
+		t = t.replace(/\|/g, ' ');
+		t = t.replace(/[*_~]/g, '');
+		t = t.replace(/\s+/g, ' ').trim();
+		return t.slice(0, 90);
 	});
 
 	function cycleStatus(e: MouseEvent) {
@@ -73,9 +75,9 @@
 	<Handle type="source" position={Position.Bottom} />
 
 	<div class="head">
-		<span class="badge" style="background: {kindColor(item.kind)}">{item.kind}</span>
+		<span class="badge">{item.kind}</span>
 		<button
-			class="status {statusClass(item.status)} {pulsing ? 'is-pulsing' : ''}"
+			class="status {statusClass(item.status)}"
 			title={item.status}
 			aria-label={`Status: ${item.status}. Click to cycle.`}
 			onclick={cycleStatus}
@@ -84,6 +86,9 @@
 		</button>
 	</div>
 	<div class="title">{item.title}</div>
+	{#if preview}
+		<div class="preview">{preview}</div>
+	{/if}
 	{#if item.tags.length > 0}
 		<div class="tags">
 			{#each item.tags as tag (tag)}
@@ -95,27 +100,21 @@
 
 <style>
 	.card {
-		width: 200px;
+		width: 210px;
 		background: var(--bg-raise);
 		border: 1px solid var(--border);
 		border-left: 3px solid var(--kind);
 		border-radius: var(--radius);
 		padding: 10px 12px;
-		box-shadow:
-			var(--shadow-2),
-			0 0 22px color-mix(in srgb, var(--kind) 14%, transparent);
+		box-shadow: var(--shadow-1);
 		transition:
 			box-shadow var(--t-fast) var(--ease-out),
-			border-color var(--t-fast) var(--ease-out),
-			transform var(--t-fast) var(--ease-out);
-		animation: bb-node-in 260ms var(--ease-out) both;
-		animation-delay: calc(min(var(--bb-i, 0) * 22ms, 320ms));
+			border-color var(--t-fast) var(--ease-out);
+		animation: bb-fade-in var(--t-med) var(--ease-out) both;
 	}
 	.card:hover {
-		border-color: color-mix(in srgb, var(--kind) 55%, var(--border));
-		box-shadow:
-			var(--shadow-3),
-			0 0 28px color-mix(in srgb, var(--kind) 24%, transparent);
+		border-color: color-mix(in srgb, var(--kind) 45%, var(--border));
+		box-shadow: var(--shadow-2);
 	}
 	.card.is-done {
 		opacity: 0.6;
@@ -134,13 +133,12 @@
 		margin-bottom: 6px;
 	}
 	.badge {
-		font-family: var(--font-display);
-		font-size: 10px;
-		font-weight: 600;
-		letter-spacing: 0.02em;
-		color: #0b0e14;
-		border-radius: 999px;
-		padding: 2px 8px;
+		font-size: 11px;
+		font-weight: 500;
+		color: color-mix(in srgb, var(--kind) 75%, var(--text));
+		background: color-mix(in srgb, var(--kind) 14%, transparent);
+		border-radius: var(--radius-sm);
+		padding: 1px 7px;
 	}
 	.status {
 		display: grid;
@@ -159,15 +157,20 @@
 		background: var(--accent-soft);
 		border-color: var(--accent);
 	}
-	.status.is-pulsing {
-		animation: bb-pulse 400ms var(--ease-spring);
-	}
 	.title {
 		font-weight: 600;
 		font-size: 14px;
 		line-height: 1.3;
-		letter-spacing: -0.005em;
 		word-break: break-word;
+	}
+	.preview {
+		margin-top: 4px;
+		font-size: 12px;
+		line-height: 1.4;
+		color: var(--text-dim);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.tags {
 		margin-top: 8px;

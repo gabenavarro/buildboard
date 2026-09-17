@@ -193,9 +193,7 @@
 	.cmd-backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(4, 6, 10, 0.4);
-		backdrop-filter: blur(2px);
-		-webkit-backdrop-filter: blur(2px);
+		background: rgba(15, 23, 42, 0.3);
 		z-index: 90;
 	}
 	.cmd {
@@ -206,14 +204,12 @@
 		width: 560px;
 		max-width: 90vw;
 		z-index: 91;
-		background: var(--glass-strong);
-		backdrop-filter: var(--glass-blur);
-		-webkit-backdrop-filter: var(--glass-blur);
-		border: 1px solid var(--border-soft);
+		background: var(--bg-raise);
+		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-3);
 		overflow: hidden;
-		animation: bb-modal-in var(--t-med) var(--ease-spring);
+		animation: bb-pop-in var(--t-med) var(--ease-out);
 	}
 	.cmd input {
 		width: 100%;

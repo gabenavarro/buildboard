@@ -84,7 +84,7 @@
 				source: e.from_id,
 				target: e.to_id,
 				label: e.label || undefined,
-				markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(143,160,189,0.55)', width: 16, height: 16 }
+					markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(120,128,140,0.6)', width: 16, height: 16 }
 			}));
 		} catch (e) {
 			console.error(e);
@@ -259,7 +259,7 @@
 					source: edge.from_id,
 					target: edge.to_id,
 					label: edge.label || undefined,
-					markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(143,160,189,0.55)', width: 16, height: 16 }
+			markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(120,128,140,0.6)', width: 16, height: 16 }
 				}
 			];
 		} catch (e) {
@@ -357,8 +357,8 @@
 				onpaneclick={handlePaneClick}
 				onmoveend={syncZoom}
 			>
-				<Background variant={BackgroundVariant.Dots} gap={24} size={1.5} patternColor="rgba(143,160,189,0.14)" />
-				<MiniMap maskColor="rgba(10,13,20,0.72)" nodeColor="rgba(91,140,255,0.45)" />
+				<Background variant={BackgroundVariant.Dots} gap={24} size={1.5} patternColor="var(--canvas-dot)" />
+				<MiniMap maskColor="var(--bg)" nodeColor="var(--accent)" />
 				<Controls position="bottom-left" showZoom showFitView />
 		</SvelteFlow>
 
@@ -430,15 +430,6 @@
 		min-height: 0;
 		position: relative;
 	}
-	.board::before {
-		content: '';
-		position: absolute;
-		inset: 0;
-		pointer-events: none;
-		background:
-			radial-gradient(600px 340px at 18% 0%, var(--accent-soft), transparent 70%),
-			radial-gradient(700px 420px at 92% 100%, rgba(176, 124, 255, 0.07), transparent 70%);
-	}
 	.loading {
 		position: absolute;
 		inset: 0;
@@ -454,13 +445,10 @@
 		font-size: 11px;
 		font-variant-numeric: tabular-nums;
 		color: var(--text-dim);
-		background: var(--glass);
-		backdrop-filter: var(--glass-blur);
-		-webkit-backdrop-filter: var(--glass-blur);
-		border: 1px solid var(--border-soft);
+		background: var(--bg-raise);
+		border: 1px solid var(--border);
 		border-radius: 999px;
 		padding: 3px 10px;
-		box-shadow: var(--shadow-1);
 	}
 	.empty {
 		position: absolute;
@@ -476,24 +464,16 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 6px;
-		padding: 28px 36px;
-		background: var(--glass);
-		backdrop-filter: var(--glass-blur);
-		-webkit-backdrop-filter: var(--glass-blur);
-		border: 1px solid var(--border-soft);
-		border-radius: var(--radius-lg);
-		box-shadow: var(--shadow-2);
 		text-align: center;
 	}
 	.empty-glyph {
-		color: var(--accent);
-		font-size: 22px;
-		text-shadow: 0 0 18px var(--accent-glow);
+		color: var(--text-dim);
+		font-size: 20px;
 	}
 	.empty-card h2 {
 		margin: 4px 0 0;
 		font-family: var(--font-display);
-		font-size: 16px;
+		font-size: 15px;
 		font-weight: 600;
 	}
 	.empty-card p {

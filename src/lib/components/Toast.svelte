@@ -16,12 +16,11 @@
 <style>
 	.toasts {
 		position: fixed;
-		bottom: 18px;
-		left: 50%;
-		transform: translateX(-50%);
+		top: 14px;
+		right: 14px;
 		display: flex;
 		flex-direction: column;
-		align-items: center;
+		align-items: flex-end;
 		gap: 8px;
 		z-index: 100;
 		pointer-events: none;
@@ -31,15 +30,13 @@
 		align-items: center;
 		gap: 8px;
 		max-width: 340px;
-		padding: 8px 14px;
+		padding: 7px 12px;
 		font-size: 13px;
-		background: var(--glass-strong);
-		backdrop-filter: var(--glass-blur);
-		-webkit-backdrop-filter: var(--glass-blur);
-		border: 1px solid var(--border-soft);
-		border-radius: 999px;
-		box-shadow: var(--shadow-3);
-		animation: bb-toast-in var(--t-med) var(--ease-out);
+		background: var(--bg-raise);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		box-shadow: var(--shadow-2);
+		animation: bb-slide-in var(--t-med) var(--ease-out);
 	}
 	.icon {
 		display: grid;
