@@ -14,30 +14,8 @@
 
 	let boards = $state<BoardWithCount[]>([]);
 	let currentBoardId = $state('default');
-	let booting = $state(true);
-	let toggleBtn = $state<HTMLButtonElement | null>(null);
 	const boardActions = { fitView: undefined as (() => void) | undefined, export: undefined as (() => void) | undefined, create: undefined as ((k: ItemKind) => void) | undefined };
 
-	function switchTheme() {
-		const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-		const next = $theme === 'light' ? 'dark' : 'light';
-		if (reduce) {
-			toggleTheme();
-			return;
-		}
-		const r = toggleBtn?.getBoundingClientRect();
-		const x = r ? r.left + r.width / 2 : window.innerWidth - 24;
-		const y = r ? r.top + r.height / 2 : 24;
-		const veil = document.createElement('div');
-		veil.className = 'theme-veil';
-		veil.style.background = next === 'light' ? '#f4f6fb' : '#0a0d14';
-		veil.style.setProperty('--vx', `${x}px`);
-		veil.style.setProperty('--vy', `${y}px`);
-		document.body.appendChild(veil);
-		requestAnimationFrame(() => requestAnimationFrame(() => veil.classList.add('on')));
-		setTimeout(() => toggleTheme(), 260);
-		setTimeout(() => veil.remove(), 620);
-	}
 	let renaming = $state(false);
 	let focusItem = $state<string | null>(null);
 	let renameName = $state('');
@@ -56,7 +34,6 @@
 	}
 
 	onMount(async () => {
-		const started = Date.now();
 		try {
 			boards = await api.listBoards();
 			const stored = localStorage.getItem(BOARD_KEY);
@@ -64,9 +41,6 @@
 		} catch (e) {
 			console.error(e);
 		}
-		// Brief branded preloader: never flash, never hang.
-		const wait = Math.max(0, 400 - (Date.now() - started));
-		setTimeout(() => (booting = false), wait);
 	});
 
 	async function newBoard() {
@@ -163,7 +137,7 @@
 			onnewboard={() => newBoard()}
 			onfitview={() => boardActions.fitView?.()}
 			onexport={() => boardActions.export?.()}
-			onthemetoggle={() => switchTheme()}
+			onthemetoggle={() => toggleTheme()}
 		/>
 
 		<div class="boards" role="group" aria-label="Board">
@@ -194,8 +168,8 @@
 			{#if currentBoardId !== 'default'}
 				<button class="ghost" onclick={() => removeBoard(currentBoardId)} title="Delete board" aria-label="Delete board">✕</button>
 			{/if}
-			<button class="ghost" bind:this={toggleBtn} onclick={switchTheme} title="Toggle light/dark theme" aria-label="Toggle light/dark theme" aria-pressed={$theme === 'light'}>
-				{$theme === 'light' ? '☾' : '☀'}
+			<button class="ghost" onclick={() => toggleTheme()} title="Toggle light/dark theme" aria-label="Toggle light/dark theme" aria-pressed={$theme === 'dark'}>
+				{$theme === 'dark' ? '☀' : '☾'}
 			</button>
 		</div>
 	</header>
@@ -205,14 +179,6 @@
 	</SvelteFlowProvider>
 
 	<Toast />
-
-	{#if booting}
-		<div class="boot" aria-hidden="true">
-			<span class="boot-logo">◆</span>
-			<span class="boot-name">buildboard</span>
-			<span class="boot-bar"><span class="boot-fill"></span></span>
-		</div>
-	{/if}
 
 	{#if modal}
 		<div class="backdrop" onmousedown={() => (modal = null)}>
@@ -261,11 +227,9 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 16px;
-		padding: 10px 16px;
-		border-bottom: 1px solid var(--border-soft);
-		background: var(--glass);
-		backdrop-filter: var(--glass-blur);
-		-webkit-backdrop-filter: var(--glass-blur);
+		padding: 8px 16px;
+		border-bottom: 1px solid var(--border);
+		background: var(--bg-raise);
 		position: relative;
 		z-index: 10;
 	}
@@ -274,21 +238,13 @@
 		align-items: center;
 		gap: 8px;
 		font-family: var(--font-display);
-		font-weight: 700;
+		font-weight: 600;
 		font-size: 15px;
-		letter-spacing: -0.01em;
 		white-space: nowrap;
 	}
 	.logo {
-		display: grid;
-		place-items: center;
-		width: 22px;
-		height: 22px;
-		border-radius: 6px;
 		color: var(--accent);
-		background: var(--accent-soft);
-		box-shadow: 0 0 12px var(--accent-glow);
-		font-size: 12px;
+		font-size: 15px;
 	}
 	.boards {
 		display: flex;
@@ -309,9 +265,7 @@
 	.backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(4, 6, 10, 0.55);
-		backdrop-filter: blur(3px);
-		-webkit-backdrop-filter: blur(3px);
+		background: rgba(15, 23, 42, 0.3);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -320,62 +274,15 @@
 	.modal {
 		width: 300px;
 		overscroll-behavior: contain;
-		background: var(--glass-strong);
-		backdrop-filter: var(--glass-blur);
-		-webkit-backdrop-filter: var(--glass-blur);
-		border: 1px solid var(--border-soft);
+		background: var(--bg-raise);
+		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-3);
 		padding: 16px;
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-		animation: bb-modal-in var(--t-med) var(--ease-spring);
-	}
-	.boot {
-		position: fixed;
-		inset: 0;
-		z-index: 200;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		gap: 12px;
-		background: var(--bg);
-	}
-	.boot-logo {
-		font-size: 30px;
-		color: var(--accent);
-		text-shadow: 0 0 24px var(--accent-glow);
-	}
-	.boot-name {
-		font-family: var(--font-display);
-		font-weight: 700;
-		font-size: 18px;
-		letter-spacing: -0.01em;
-	}
-	.boot-bar {
-		width: 140px;
-		height: 3px;
-		border-radius: 2px;
-		background: var(--bg-raise-2);
-		overflow: hidden;
-	}
-	.boot-fill {
-		display: block;
-		height: 100%;
-		width: 40%;
-		border-radius: 2px;
-		background: var(--accent);
-		animation: bb-boot-slide 1.1s var(--ease-out) infinite;
-	}
-	@keyframes bb-boot-slide {
-		from {
-			transform: translateX(-120%);
-		}
-		to {
-			transform: translateX(320%);
-		}
+		animation: bb-pop-in var(--t-med) var(--ease-out);
 	}
 	.modal h3 {
 		font-size: 14px;

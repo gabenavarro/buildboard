@@ -206,15 +206,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-		background: var(--glass);
-		backdrop-filter: var(--glass-blur);
-		-webkit-backdrop-filter: var(--glass-blur);
-		border-left: 1px solid var(--border-soft);
-		box-shadow: var(--shadow-2);
+		background: var(--bg-raise);
+		border-left: 1px solid var(--border);
 		padding: 16px;
 		height: 100%;
 		min-height: 0;
-		animation: bb-panel-in var(--t-slow) var(--ease-out);
+		animation: bb-slide-in var(--t-med) var(--ease-out);
 	}
 	header {
 		display: flex;
