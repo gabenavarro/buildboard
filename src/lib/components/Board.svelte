@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { SvelteFlow, Background, MiniMap, Controls, useSvelteFlow, type Node, type Edge, type Connection } from '@xyflow/svelte';
+	import { SvelteFlow, Background, BackgroundVariant, MiniMap, Controls, MarkerType, useSvelteFlow, type Node, type Edge, type Connection } from '@xyflow/svelte';
 	import { setContext } from 'svelte';
 
 	import ItemNode from '$lib/components/ItemNode.svelte';
@@ -74,7 +74,8 @@
 				id: e.id,
 				source: e.from_id,
 				target: e.to_id,
-				label: e.label || undefined
+				label: e.label || undefined,
+				markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(143,160,189,0.55)', width: 16, height: 16 }
 			}));
 		} catch (e) {
 			console.error(e);
@@ -240,7 +241,13 @@
 			});
 			edges = [
 				...edges,
-				{ id: edge.id, source: edge.from_id, target: edge.to_id, label: edge.label || undefined }
+				{
+					id: edge.id,
+					source: edge.from_id,
+					target: edge.to_id,
+					label: edge.label || undefined,
+					markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(143,160,189,0.55)', width: 16, height: 16 }
+				}
 			];
 		} catch (e) {
 			console.error(e);
@@ -336,8 +343,8 @@
 				onpaneclick={handlePaneClick}
 				onmoveend={syncZoom}
 			>
-				<Background />
-				<MiniMap />
+				<Background variant={BackgroundVariant.Dots} gap={24} size={1.5} patternColor="rgba(143,160,189,0.14)" />
+				<MiniMap maskColor="rgba(10,13,20,0.72)" nodeColor="rgba(91,140,255,0.45)" />
 				<Controls position="bottom-left" showZoom showFitView />
 		</SvelteFlow>
 
@@ -350,7 +357,14 @@
 		</div>
 
 		{#if loaded && nodes.length === 0}
-			<div class="hint">Double-click anywhere to add a note</div>
+			<div class="hint empty">
+				<div class="empty-card">
+					<span class="empty-glyph">◆</span>
+					<h2>This board is empty</h2>
+					<p>Double-click the canvas, or start with a note.</p>
+					<button onclick={() => handleCreate('note', { x: 0, y: 0 })}>Add first note</button>
+				</div>
+			</div>
 		{/if}
 
 		<div class="overlays">
@@ -402,6 +416,15 @@
 		min-height: 0;
 		position: relative;
 	}
+	.board::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		background:
+			radial-gradient(600px 340px at 18% 0%, var(--accent-soft), transparent 70%),
+			radial-gradient(700px 420px at 92% 100%, rgba(176, 124, 255, 0.07), transparent 70%);
+	}
 	.loading {
 		position: absolute;
 		inset: 0;
@@ -409,14 +432,60 @@
 		place-items: center;
 		color: var(--text-dim);
 	}
-	.hint {
+	.zoomreadout {
+		position: absolute;
+		left: 44px;
+		bottom: 12px;
+		z-index: 5;
+		font-size: 11px;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-dim);
+		background: var(--glass);
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		border: 1px solid var(--border-soft);
+		border-radius: 999px;
+		padding: 3px 10px;
+		box-shadow: var(--shadow-1);
+	}
+	.empty {
 		position: absolute;
 		inset: 0;
 		display: grid;
 		place-items: center;
-		color: var(--text-dim);
 		pointer-events: none;
-		font-size: 14px;
+		z-index: 4;
+	}
+	.empty-card {
+		pointer-events: auto;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 6px;
+		padding: 28px 36px;
+		background: var(--glass);
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		border: 1px solid var(--border-soft);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-2);
+		text-align: center;
+	}
+	.empty-glyph {
+		color: var(--accent);
+		font-size: 22px;
+		text-shadow: 0 0 18px var(--accent-glow);
+	}
+	.empty-card h2 {
+		margin: 4px 0 0;
+		font-family: var(--font-display);
+		font-size: 16px;
+		font-weight: 600;
+	}
+	.empty-card p {
+		margin: 0 0 8px;
+		font-size: 13px;
+		color: var(--text-dim);
 	}
 	.overlays {
 		position: absolute;

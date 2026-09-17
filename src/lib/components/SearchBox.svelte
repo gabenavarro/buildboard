@@ -140,10 +140,12 @@
 		right: 0;
 		max-height: 420px;
 		overflow-y: auto;
-		background: var(--bg-raise);
-		border: 1px solid var(--border);
+		background: var(--glass-strong);
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		border: 1px solid var(--border-soft);
 		border-radius: var(--radius);
-		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+		box-shadow: var(--shadow-3);
 		z-index: 50;
 	}
 	.hit {

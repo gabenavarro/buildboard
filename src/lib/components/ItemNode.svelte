@@ -87,10 +87,22 @@
 		width: 200px;
 		background: var(--bg-raise);
 		border: 1px solid var(--border);
-		border-left: 4px solid var(--kind);
+		border-left: 3px solid var(--kind);
 		border-radius: var(--radius);
 		padding: 10px 12px;
-		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+		box-shadow:
+			var(--shadow-2),
+			0 0 22px color-mix(in srgb, var(--kind) 14%, transparent);
+		transition:
+			box-shadow var(--t-fast) var(--ease-out),
+			border-color var(--t-fast) var(--ease-out),
+			transform var(--t-fast) var(--ease-out);
+	}
+	.card:hover {
+		border-color: color-mix(in srgb, var(--kind) 55%, var(--border));
+		box-shadow:
+			var(--shadow-3),
+			0 0 28px color-mix(in srgb, var(--kind) 24%, transparent);
 	}
 	.card.is-done {
 		opacity: 0.6;
@@ -109,29 +121,36 @@
 		margin-bottom: 6px;
 	}
 	.badge {
+		font-family: var(--font-display);
 		font-size: 10px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
+		font-weight: 600;
+		letter-spacing: 0.02em;
 		color: #0b0e14;
-		border-radius: 5px;
-		padding: 2px 6px;
+		border-radius: 999px;
+		padding: 2px 8px;
 	}
 	.status {
+		display: grid;
+		place-items: center;
+		min-width: 22px;
+		height: 22px;
 		background: transparent;
-		border: none;
-		border-radius: 4px;
-		padding: 2px 4px;
-		font-size: 14px;
+		border: 1px solid var(--border-soft);
+		border-radius: 999px;
+		padding: 0;
+		font-size: 13px;
 		line-height: 1;
+		transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
 	}
 	.status:hover {
 		background: var(--accent-soft);
+		border-color: var(--accent);
 	}
 	.title {
 		font-weight: 600;
 		font-size: 14px;
 		line-height: 1.3;
+		letter-spacing: -0.005em;
 		word-break: break-word;
 	}
 	.tags {

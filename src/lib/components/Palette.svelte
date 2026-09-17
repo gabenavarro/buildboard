@@ -44,6 +44,17 @@
 	.palette {
 		position: relative;
 	}
+	.palette > button {
+		background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 78%, #12203d));
+		border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+		color: #fff;
+		font-weight: 600;
+		box-shadow: 0 0 18px var(--accent-glow);
+	}
+	.palette > button:hover {
+		border-color: var(--accent);
+		box-shadow: 0 0 26px var(--accent-glow);
+	}
 	ul {
 		position: absolute;
 		right: 0;
@@ -51,10 +62,12 @@
 		margin: 0;
 		padding: 6px;
 		list-style: none;
-		background: var(--bg-raise);
-		border: 1px solid var(--border);
+		background: var(--glass-strong);
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		border: 1px solid var(--border-soft);
 		border-radius: 10px;
-		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+		box-shadow: var(--shadow-3);
 		display: flex;
 		flex-direction: column;
 		gap: 2px;

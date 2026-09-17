@@ -80,10 +80,12 @@
 		z-index: 41;
 		min-width: 190px;
 		max-width: 240px;
-		background: var(--bg-raise);
-		border: 1px solid var(--border);
+		background: var(--glass-strong);
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		border: 1px solid var(--border-soft);
 		border-radius: var(--radius);
-		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+		box-shadow: var(--shadow-3);
 		padding: 4px;
 		display: flex;
 		flex-direction: column;

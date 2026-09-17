@@ -122,7 +122,7 @@
 
 		<SearchBox boardId={currentBoardId} {boards} onselect={handleSearchSelect} />
 
-		<div class="boards">
+		<div class="boards" role="group" aria-label="Board">
 			{#if renaming}
 				<input
 					class="rename"
@@ -145,15 +145,11 @@
 					{/each}
 				</select>
 			{/if}
-			<button onclick={startRename} title="Rename board">✎</button>
-			<button onclick={newBoard} title="New board">＋</button>
+			<button onclick={startRename} title="Rename board" aria-label="Rename board">✎</button>
+			<button onclick={newBoard} title="New board" aria-label="New board">＋</button>
 			{#if currentBoardId !== 'default'}
-				<button class="ghost" onclick={() => removeBoard(currentBoardId)} title="Delete board">✕</button>
+				<button class="ghost" onclick={() => removeBoard(currentBoardId)} title="Delete board" aria-label="Delete board">✕</button>
 			{/if}
-		</div>
-
-		<div class="meta">
-			<span class="count">whiteboard · decisions · subagents</span>
 		</div>
 	</header>
 
@@ -209,18 +205,33 @@
 		justify-content: space-between;
 		gap: 16px;
 		padding: 10px 16px;
-		border-bottom: 1px solid var(--border);
-		background: var(--bg-raise);
+		border-bottom: 1px solid var(--border-soft);
+		background: var(--glass);
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		position: relative;
+		z-index: 10;
 	}
 	.brand {
 		display: flex;
 		align-items: center;
 		gap: 8px;
+		font-family: var(--font-display);
 		font-weight: 700;
+		font-size: 15px;
+		letter-spacing: -0.01em;
 		white-space: nowrap;
 	}
 	.logo {
+		display: grid;
+		place-items: center;
+		width: 22px;
+		height: 22px;
+		border-radius: 6px;
 		color: var(--accent);
+		background: var(--accent-soft);
+		box-shadow: 0 0 12px var(--accent-glow);
+		font-size: 12px;
 	}
 	.boards {
 		display: flex;
@@ -241,7 +252,9 @@
 	.backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.45);
+		background: rgba(4, 6, 10, 0.55);
+		backdrop-filter: blur(3px);
+		-webkit-backdrop-filter: blur(3px);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -249,9 +262,13 @@
 	}
 	.modal {
 		width: 300px;
-		background: var(--bg-raise);
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
+		overscroll-behavior: contain;
+		background: var(--glass-strong);
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		border: 1px solid var(--border-soft);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-3);
 		padding: 16px;
 		display: flex;
 		flex-direction: column;
@@ -259,6 +276,7 @@
 	}
 	.modal h3 {
 		font-size: 14px;
+		font-family: var(--font-display);
 	}
 	.modal input {
 		width: 100%;
@@ -278,13 +296,5 @@
 	}
 	.danger {
 		color: #e5484d;
-	}
-	.meta {
-		flex: 1;
-		text-align: right;
-	}
-	.count {
-		font-size: 12px;
-		color: var(--text-dim);
 	}
 </style>
