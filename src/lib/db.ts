@@ -261,8 +261,12 @@ export const MIGRATIONS = [
 	ALTER TABLE concepts ADD COLUMN ref TEXT;
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_items_ref ON items(ref) WHERE ref IS NOT NULL;
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_decisions_ref ON decisions(ref) WHERE ref IS NOT NULL;
-	CREATE UNIQUE INDEX IF NOT EXISTS idx_concepts_ref ON concepts(ref) WHERE ref IS NOT NULL;`
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_concepts_ref ON concepts(ref) WHERE ref IS NOT NULL;`,
+	// Task bridge: fractional completion on items (0-100)
+	`ALTER TABLE items ADD COLUMN pct REAL;`
 ];
+
+const REF_MIGRATION_INDEX = MIGRATIONS.findIndex((sql) => sql.includes('ADD COLUMN ref'));
 
 const MIGRATION_NAMES = MIGRATIONS.map((_, i) => `m${String(i).padStart(3, '0')}`);
 
@@ -297,7 +301,7 @@ function migrate(database: DatabaseSync): void {
 	const applied = new Set(
 		database.prepare('SELECT name FROM schema_migrations').all().map((r) => (r.name as string))
 	);
-	const needsRefBackfill = !applied.has(MIGRATION_NAMES[MIGRATIONS.length - 1]);
+	const needsRefBackfill = REF_MIGRATION_INDEX >= 0 && !applied.has(MIGRATION_NAMES[REF_MIGRATION_INDEX]);
 	MIGRATIONS.forEach((sql, i) => {
 		const name = MIGRATION_NAMES[i];
 		if (!applied.has(name)) {

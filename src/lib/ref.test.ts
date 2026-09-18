@@ -68,7 +68,8 @@ describe('migration backfill', () => {
 			name TEXT NOT NULL UNIQUE,
 			applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 		)`);
-		for (let i = 0; i < MIGRATIONS.length - 1; i++) {
+		const refIdx = MIGRATIONS.findIndex((sql) => sql.includes('ADD COLUMN ref'));
+		for (let i = 0; i < refIdx; i++) {
 			seed.exec(MIGRATIONS[i]);
 			seed.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(`m${String(i).padStart(3, '0')}`);
 		}
@@ -354,6 +355,52 @@ describe('glossary upsert', () => {
 		expect(a.id).not.toBe(b.id);
 		expect(b.definition).toBe('');
 		expect(listConcepts()).toHaveLength(2);
+	});
+});
+
+describe('task bridge', () => {
+	it('recordTask creates a task item with a [tt] title, ref, and seeded thread', async () => {
+		const { recordTask, getItem, getThreadForItem, listMessages } = await import('./store.js');
+		const { ref, item } = recordTask({ what: 'write the docs' });
+		expect(item.kind).toBe('task');
+		expect(item.title).toBe('[tt] write the docs');
+		expect(ref).toBeTruthy();
+		expect(getItem(item.id)?.ref).toBe(ref);
+		const thread = getThreadForItem(item.id);
+		expect(thread).toBeTruthy();
+		expect(listMessages(thread!.id)).toHaveLength(1);
+	});
+
+	it('updateItem sets pct and marks the item done at pct=100', async () => {
+		const { createItem, updateItem } = await import('./store.js');
+		const item = createItem({ title: 'progress', kind: 'task' });
+		const mid = updateItem(item.id, { pct: 50 });
+		expect(mid?.pct).toBe(50);
+		expect(mid?.status).toBe('open');
+		const done = updateItem(item.id, { pct: 100 });
+		expect(done?.pct).toBe(100);
+		expect(done?.status).toBe('done');
+	});
+
+	it('clamps pct into 0-100', async () => {
+		const { createItem, updateItem } = await import('./store.js');
+		const item = createItem({ title: 'clamp', kind: 'task' });
+		expect(updateItem(item.id, { pct: 150 })?.pct).toBe(100);
+		const it2 = createItem({ title: 'clamp2', kind: 'task' });
+		expect(updateItem(it2.id, { pct: -20 })?.pct).toBe(0);
+	});
+});
+
+describe('POST /api/tasks', () => {
+	it('records a task and returns ref + item', async () => {
+		const { POST: postTask } = await import('../routes/api/tasks/+server.js');
+		const res = await postTask(apiEvent({}, 'http://localhost/api/tasks', jsonBody({ what: 'ship it', board_id: 'default' })));
+		expect(res.status).toBe(201);
+		/** @type {{ ref?: string; item?: { kind: string; title: string } }} */
+		const body = await res.json();
+		expect(body.ref).toBeTruthy();
+		expect(body.item?.kind).toBe('task');
+		expect(body.item?.title).toBe('[tt] ship it');
 	});
 });
 

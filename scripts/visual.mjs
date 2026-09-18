@@ -126,6 +126,12 @@ try {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name: 'Visual Concept', definition: 'a defined term', details_md: 'Details for the concept.', item_id: vc.id })
   });
+  const vt = await apiCreateItem('Visual Task', 'task', 60, 300);
+  await fetch(`${BASE}/api/items/${vt.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ pct: 40 })
+  });
   await fetch(`${BASE}/api/edges`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -299,6 +305,14 @@ try {
     ((await conceptCard.locator('.concept-def').first().textContent()) || '').includes('a defined term')
   );
   check('concept card shows details preview', (await conceptCard.locator('.preview').count()) === 1);
+
+  // Task card: NN% progress chip.
+  const taskCard = page.locator('.svelte-flow__node .card', { hasText: 'Visual Task' }).first();
+  check('task card shows a pct chip', (await taskCard.locator('.pct-chip').count()) === 1);
+  check(
+    'pct chip shows 40%',
+    ((await taskCard.locator('.pct-chip').first().textContent()) || '').includes('40%')
+  );
 
   // Theme toggle: switches to dark and updates the root.
   await page.locator('.boards button[aria-label="Toggle light/dark theme"]').click();

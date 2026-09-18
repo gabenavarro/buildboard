@@ -130,6 +130,9 @@
 				#{cardRef}
 			</button>
 		{/if}
+		{#if typeof item.pct === 'number'}
+			<span class="pct-chip" title={`${item.pct}% complete`}>{item.pct}%</span>
+		{/if}
 		<button
 			class="status {statusClass(item.status)}"
 			title={item.status}
@@ -331,6 +334,16 @@
 	}
 	.ref-chip:hover {
 		background: color-mix(in srgb, var(--kind-decision) 22%, transparent);
+	}
+	.pct-chip {
+		margin-left: 2px;
+		font-family: var(--mono, ui-monospace, monospace);
+		font-size: 10px;
+		color: var(--kind-task);
+		background: color-mix(in srgb, var(--kind-task) 12%, transparent);
+		border: 1px solid color-mix(in srgb, var(--kind-task) 30%, transparent);
+		border-radius: 4px;
+		padding: 1px 5px;
 	}
 	.dec-state {
 		display: flex;
