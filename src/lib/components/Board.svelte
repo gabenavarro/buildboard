@@ -11,9 +11,15 @@
 	import EdgeEditor from '$lib/components/EdgeEditor.svelte';
 	import { api } from '$lib/api.js';
 	import { toast } from '$lib/toast.js';
-	import type { Item, ItemKind, BoardWithCount, Decision, Concept } from '$lib/types.js';
+	import type { Item, ItemKind, BoardWithCount, Decision, Concept, Edge as AppEdge } from '$lib/types.js';
 
-	type BoardNode = Node<{ item: Item; i: number; decision?: Decision | null; concept?: Concept | null }>;
+	type BoardNode = Node<{
+		item: Item;
+		i: number;
+		decision?: Decision | null;
+		concept?: Concept | null;
+		blockedBy?: { ref: string; title: string } | null;
+	}>;
 	type BoardEdge = Edge & { kind: string };
 
 	let {
@@ -77,6 +83,15 @@
 
 	setContext('board:statuschange', (item: Item) => handleUpdated(item));
 
+	// A blocked card's "waiting on" footer focuses the blocking item.
+	setContext('board:focusitem', (id: string) => {
+		const node = nodes.find((n) => n.id === id);
+		if (node) {
+			selected = findItem(id);
+			void setCenter(node.position.x + 100, node.position.y + 40, { zoom: 1, duration: 300 });
+		}
+	});
+
 	function flowContainer(): HTMLElement | null {
 		return boardRef?.querySelector('.svelte-flow') ?? null;
 	}
@@ -117,6 +132,69 @@
 		edges = edges.map((e) => ({ ...e, ...edgeHandles(e) }));
 	}
 
+	function applyData(
+		items: Item[],
+		edgeList: AppEdge[],
+		boardDecisions: Decision[],
+		concepts: Concept[]
+	): void {
+		const dmap: Record<string, Decision> = {};
+		for (const d of boardDecisions) {
+			if (d.item_id && d.status === 'active') dmap[d.item_id] = d;
+		}
+		decisionByItem = dmap;
+		const cmap: Record<string, Concept> = {};
+		for (const c of concepts) {
+			if (c.item_id) cmap[c.item_id] = c;
+		}
+		const byId: Record<string, Item> = {};
+		for (const it of items) byId[it.id] = it;
+		nodes = items.map((item, i) => {
+			let blockedBy: { ref: string; title: string } | null = null;
+			if (item.status === 'blocked') {
+				for (const e of edgeList) {
+					if (e.kind === 'blocks' && e.from_id === item.id) {
+						const target = byId[e.to_id];
+						if (target) {
+							blockedBy = { ref: target.ref ?? target.id, title: target.title };
+							break;
+						}
+					}
+				}
+			}
+			return {
+				id: item.id,
+				type: item.kind === 'text' ? 'text' : 'item',
+				position: { x: item.x, y: item.y },
+				data: { item, i, decision: dmap[item.id], concept: cmap[item.id], blockedBy }
+			};
+		});
+		edges = edgeList.map((e) => {
+			const blocks = e.kind === 'blocks';
+			const color = blocks ? 'var(--edge-blocks)' : 'var(--edge-arrow)';
+			const xy: BoardEdge = {
+				id: e.id,
+				source: e.from_id,
+				target: e.to_id,
+				kind: e.kind,
+				label: e.label || (blocks ? 'blocks' : undefined),
+				markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
+				style: blocks ? `stroke: ${color}; stroke-dasharray: 6 4` : `stroke: ${color}`
+			};
+			return { ...xy, ...edgeHandles(xy) };
+		});
+	}
+
+	async function fetchBoard() {
+		const [items, edgeList, boardDecisions, concepts] = await Promise.all([
+			api.listItems({ board: boardId }),
+			api.listEdges().then((all) => all.filter((e) => e.board_id === boardId)),
+			api.listDecisions(undefined, boardId),
+			api.listConcepts()
+		]);
+		return { items, edgeList, boardDecisions, concepts };
+	}
+
 	async function load(isFirst: boolean) {
 		const isSwitch = !isFirst;
 		loaded = false;
@@ -125,38 +203,9 @@
 		selectedNodes = [];
 		selectedEdges = [];
 		try {
-			const [items, edgeList, boardDecisions, concepts] = await Promise.all([
-				api.listItems({ board: boardId }),
-				api.listEdges().then((all) => all.filter((e) => e.board_id === boardId)),
-				api.listDecisions(undefined, boardId),
-				api.listConcepts()
-			]);
-			const dmap: Record<string, Decision> = {};
-			for (const d of boardDecisions) {
-				if (d.item_id && d.status === 'active') dmap[d.item_id] = d;
-			}
-			decisionByItem = dmap;
-			const cmap: Record<string, Concept> = {};
-			for (const c of concepts) {
-				if (c.item_id) cmap[c.item_id] = c;
-			}
-			nodes = items.map((item, i) => ({
-				id: item.id,
-				type: item.kind === 'text' ? 'text' : 'item',
-				position: { x: item.x, y: item.y },
-				data: { item, i, decision: dmap[item.id], concept: cmap[item.id] }
-			}));
-			edges = edgeList.map((e) => {
-				const xy: BoardEdge = {
-					id: e.id,
-					source: e.from_id,
-					target: e.to_id,
-					kind: e.kind,
-					label: e.label || undefined,
-					markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--edge-arrow)', width: 16, height: 16 }
-				};
-				return { ...xy, ...edgeHandles(xy) };
-			});
+			const data = await fetchBoard();
+			applyData(data.items, data.edgeList, data.boardDecisions, data.concepts);
+			lastSnapshot = snapshotOf(data.items, data.edgeList, data.boardDecisions, data.concepts);
 		} catch (e) {
 			console.error(e);
 		}
@@ -170,6 +219,61 @@
 			refreshEdgeHandles();
 		});
 	}
+
+	// Live updates: subscribe to the board SSE stream and diff-refresh on each
+	// change; a polling fallback covers servers without SSE. Debounced so a
+	// burst of events (e.g. resolve + unblock) triggers one refresh. A snapshot
+	// diff skips the re-render when nothing changed, so steady-state polling
+	// never disturbs in-progress interaction (an open select, a drag, etc.).
+	let lastSnapshot = '';
+	function snapshotOf(items: Item[], edgeList: AppEdge[], boardDecisions: Decision[], concepts: Concept[]): string {
+		return JSON.stringify([
+			items.map((i) => `${i.id}:${i.updated_at}:${i.status}:${i.pct ?? ''}`),
+			edgeList.map((e) => `${e.id}:${e.kind}:${e.label}`),
+			boardDecisions.map((d) => `${d.id}:${d.choice ?? ''}:${d.status}`),
+			concepts.map((c) => `${c.id}:${c.updated_at}`)
+		]);
+	}
+	let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleLiveRefresh() {
+		if (refreshTimer) return;
+		refreshTimer = setTimeout(() => {
+			refreshTimer = null;
+			fetchBoard()
+				.then((data) => {
+					if (!loaded) return;
+					const snap = snapshotOf(data.items, data.edgeList, data.boardDecisions, data.concepts);
+					if (snap === lastSnapshot) return;
+					lastSnapshot = snap;
+					applyData(data.items, data.edgeList, data.boardDecisions, data.concepts);
+					requestAnimationFrame(() => refreshEdgeHandles());
+				})
+				.catch((e) => console.error(e));
+		}, 120);
+	}
+
+	$effect(() => {
+		void boardId;
+		let es: EventSource | null = null;
+		const poll = setInterval(() => {
+			if (loaded) scheduleLiveRefresh();
+		}, 4000);
+		// The long-lived SSE stream breaks vite's dev server on page reload
+		// (module connections reset), so in dev we rely on the poll alone.
+		// In production the stream gives instant updates; the poll is the fallback.
+		if (!import.meta.env.DEV) {
+			try {
+				es = new EventSource(`/api/boards/${boardId}/events`);
+				es.onmessage = () => scheduleLiveRefresh();
+			} catch {
+				es = null;
+			}
+		}
+		return () => {
+			clearInterval(poll);
+			es?.close();
+		};
+	});
 
 	let firstLoad = true;
 

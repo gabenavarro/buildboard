@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { getDb, newId, newRef, ITEM_KINDS, ITEM_STATUSES } from './db.js';
+import { emitBoardChange } from './board-events.js';
 import type {
 	Item,
 	Edge,
@@ -188,7 +189,9 @@ export function createItem(input: CreateItemInput): Item {
 				ref
 			)
 	);
-	return getItem(id)!;
+	const created = getItem(id)!;
+	emitBoardChange(created.board_id, 'item.created');
+	return created;
 }
 
 export function listItems(
@@ -279,7 +282,9 @@ export function updateItem(id: string, patch: Record<string, unknown>): Item | n
 	const sets = Object.keys(fields).map((k) => `${k} = ?`);
 	const values = Object.values(fields);
 	db.prepare(`UPDATE items SET ${sets.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(...values, id);
-	return getItem(id);
+	const updated = getItem(id);
+	if (updated) emitBoardChange(updated.board_id, 'item.updated');
+	return updated;
 }
 
 /**
@@ -295,6 +300,7 @@ export function moveItem(id: string, board_id: string): Item | null {
 	if (!getBoard(board_id)) throw new StoreError(404, `board not found: ${board_id}`);
 	const item = getItem(id);
 	if (!item) return null;
+	const fromBoard = item.board_id;
 
 	db.prepare(`UPDATE items SET board_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(
 		board_id,
@@ -306,7 +312,12 @@ export function moveItem(id: string, board_id: string): Item | null {
 		    OR (to_id = ? AND from_id IN (SELECT id FROM items WHERE board_id = ?))`
 	).run(board_id, id, board_id, id, board_id);
 
-	return getItem(id);
+	const moved = getItem(id);
+	if (moved) {
+		emitBoardChange(moved.board_id, 'item.moved');
+		if (fromBoard !== moved.board_id) emitBoardChange(fromBoard, 'item.moved');
+	}
+	return moved;
 }
 
 /**
@@ -348,7 +359,9 @@ export function duplicateItem(
 				ref
 			)
 	);
-	return getItem(copyId);
+	const copy = getItem(copyId);
+	if (copy) emitBoardChange(copy.board_id, 'item.created');
+	return copy;
 }
 
 /**
@@ -360,6 +373,7 @@ export function duplicateItem(
  */
 export function deleteItem(id: string): boolean {
 	const db = getDb();
+	const before = getItem(id);
 	db.exec('BEGIN');
 	try {
 		db.prepare('DELETE FROM threads WHERE item_id = ?').run(id);
@@ -367,6 +381,7 @@ export function deleteItem(id: string): boolean {
 		db.prepare('DELETE FROM agent_tasks WHERE item_id = ?').run(id);
 		const res = db.prepare('DELETE FROM items WHERE id = ?').run(id);
 		db.exec('COMMIT');
+		if (res.changes > 0 && before) emitBoardChange(before.board_id, 'item.deleted');
 		return res.changes > 0;
 	} catch (err) {
 		db.exec('ROLLBACK');
@@ -395,7 +410,9 @@ export function createEdge(input: CreateEdgeInput): Edge {
 		input.label ?? '',
 		input.board_id ?? 'default'
 	);
-	return db.prepare('SELECT * FROM edges WHERE id = ?').get(id) as unknown as Edge;
+	const created = db.prepare('SELECT * FROM edges WHERE id = ?').get(id) as unknown as Edge;
+	emitBoardChange(created.board_id, 'edge.created');
+	return created;
 }
 
 export function listEdges(board_id?: string): Edge[] {
@@ -454,12 +471,16 @@ export function updateEdge(id: string, patch: Record<string, unknown>): Edge | n
 	if (Object.keys(fields).length === 0) return existing;
 	const sets = Object.keys(fields).map((k) => `${k} = ?`);
 	db.prepare(`UPDATE edges SET ${sets.join(', ')} WHERE id = ?`).run(...Object.values(fields), id);
-	return getEdge(id);
+	const updated = getEdge(id);
+	if (updated) emitBoardChange(updated.board_id, 'edge.updated');
+	return updated;
 }
 
 export function deleteEdge(id: string): boolean {
 	const db = getDb();
+	const before = getEdge(id);
 	const res = db.prepare('DELETE FROM edges WHERE id = ?').run(id);
+	if (res.changes > 0 && before) emitBoardChange(before.board_id, 'edge.deleted');
 	return res.changes > 0;
 }
 
@@ -786,6 +807,7 @@ export function recordDecision(input: RecordDecisionInput): { ref: string; item:
 		const thread = createThread(`Discussion: ${input.question}`, item.id);
 		createMessage({ thread_id: thread.id, role: 'system', content: input.question });
 		db.exec('COMMIT');
+		emitBoardChange(item.board_id, 'decision.recorded');
 		return { ref, item, decision };
 	} catch (e) {
 		db.exec('ROLLBACK');
@@ -829,6 +851,7 @@ export function recordTask(input: RecordTaskInput): { ref: string; item: Item } 
 		const thread = createThread(`Work: ${input.what}`, item.id);
 		createMessage({ thread_id: thread.id, role: 'system', content: input.what });
 		db.exec('COMMIT');
+		emitBoardChange(item.board_id, 'task.recorded');
 		return { ref, item };
 	} catch (e) {
 		db.exec('ROLLBACK');
@@ -912,6 +935,7 @@ export function resolveDecision(
 		const finalDecision = getDecision(decision.id);
 		const finalItem = getItem(item.id);
 		if (!finalDecision || !finalItem) throw new Error('decision or item disappeared during resolve');
+		emitBoardChange(finalItem.board_id, 'decision.resolved');
 		return { decision: finalDecision, item: finalItem, unblocked };
 	} catch (e) {
 		db.exec('ROLLBACK');
@@ -1043,9 +1067,11 @@ export function upsertConceptByName(name: string, input: UpsertConceptInput = {}
 		if (input.details_md !== undefined) patch.details_md = input.details_md;
 		if (input.source !== undefined) patch.source = input.source;
 		if (Object.keys(patch).length === 0) return existing;
-		return updateConcept(existing.id, patch) ?? existing;
+		const updated = updateConcept(existing.id, patch) ?? existing;
+		emitConceptChange(updated);
+		return updated;
 	}
-	return createConcept({
+	const created = createConcept({
 		name: trimmed,
 		definition: input.definition,
 		details_md: input.details_md,
@@ -1053,6 +1079,15 @@ export function upsertConceptByName(name: string, input: UpsertConceptInput = {}
 		item_id: input.item_id ?? null,
 		ref: input.ref
 	});
+	emitConceptChange(created);
+	return created;
+}
+
+/** Emit a change for a concept's board (if it is attached to a board item). */
+function emitConceptChange(concept: Concept): void {
+	if (!concept.item_id) return;
+	const item = getItem(concept.item_id);
+	if (item) emitBoardChange(item.board_id, 'concept.changed');
 }
 
 export function deleteConcept(id: string): boolean {

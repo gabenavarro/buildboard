@@ -466,6 +466,23 @@ const pageErrors = [];
     check('pct=100 marks the task done', full.pct === 100 && full.status === 'done', `pct=${full.pct} status=${full.status}`);
   }
 
+  // --- live board (issue #89): a remote change appears without a reload ---
+  await fetch(`${BASE}/api/items`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'E2E live card', kind: 'note', x: 40, y: 400, board_id: 'default' })
+  });
+  await page
+    .waitForFunction(() => !!document.querySelector('.svelte-flow__node .card') &&
+      [...document.querySelectorAll('.svelte-flow__node .card')].some((c) => c.textContent?.includes('E2E live card')),
+      null,
+      { timeout: 8000 })
+    .catch(() => {});
+  check(
+    'remote item appears on the live board without reload',
+    (await page.locator('.svelte-flow__node .card', { hasText: 'E2E live card' }).count()) === 1
+  );
+
   clearTimeout(watchdog);
   if (process.exitCode === 0) console.log('\nE2E PASS');
 } catch (e) {

@@ -9,13 +9,23 @@
 	let {
 		data,
 		selected = false
-	}: { data: { item: Item; i: number; decision?: Decision | null; concept?: Concept | null }; selected?: boolean } =
-		$props();
+	}: {
+		data: {
+			item: Item;
+			i: number;
+			decision?: Decision | null;
+			concept?: Concept | null;
+			blockedBy?: { ref: string; title: string } | null;
+		};
+		selected?: boolean;
+	} = $props();
 	const item = $derived(data.item);
 	const decision = $derived(data.decision ?? null);
 	const concept = $derived(data.concept ?? null);
+	const blockedBy = $derived(data.blockedBy ?? null);
 	const onstatus = getContext<((item: Item) => void) | undefined>('board:statuschange');
 	const ondelete = getContext<((id: string) => void) | undefined>('board:delete');
+	const onfocusitem = getContext<((id: string) => void) | undefined>('board:focusitem');
 	const ondecisionresolved = getContext<((decision: Decision, item: Item, unblocked: Item[]) => void) | undefined>(
 		'board:decisionresolved'
 	);
@@ -192,6 +202,19 @@
 			{/each}
 		</div>
 	{/if}
+	{#if item.status === 'blocked' && blockedBy}
+		<button
+			class="blocked-by"
+			title="Focus: {blockedBy.title}"
+			onclick={(e) => {
+				e.stopPropagation();
+				e.preventDefault();
+				onfocusitem?.(blockedBy.ref);
+			}}
+		>
+			⊘ waiting on #{blockedBy.ref}
+		</button>
+	{/if}
 </div>
 
 <style>
@@ -307,6 +330,22 @@
 		background: var(--bg-raise-2);
 		border-radius: 4px;
 		padding: 1px 5px;
+	}
+	.blocked-by {
+		margin-top: 8px;
+		width: 100%;
+		font-family: var(--mono, ui-monospace, monospace);
+		font-size: 10px;
+		color: var(--edge-blocks);
+		background: color-mix(in srgb, var(--edge-blocks) 10%, transparent);
+		border: 1px dashed color-mix(in srgb, var(--edge-blocks) 40%, transparent);
+		border-radius: 4px;
+		padding: 3px 6px;
+		cursor: pointer;
+		text-align: left;
+	}
+	.blocked-by:hover {
+		background: color-mix(in srgb, var(--edge-blocks) 20%, transparent);
 	}
 	.status.st-open {
 		color: var(--text-dim);
