@@ -58,13 +58,37 @@ export function buildBrief(opts: BriefOptions = {}): string {
 
 	const decisions = (db
 		.prepare(
-			`SELECT d.question, d.choice, d.status FROM decisions d
+			`SELECT d.question, d.ref, d.options, d.choice,
+				 COALESCE(b.n, 0) AS block_count
+			 FROM decisions d
 			 JOIN items i ON i.id = d.item_id
+			 LEFT JOIN (
+				 SELECT e.to_id, COUNT(*) AS n FROM edges e
+				 WHERE e.kind = 'blocks' GROUP BY e.to_id
+			 ) b ON b.to_id = d.item_id
 			 WHERE i.board_id = ? AND d.status = 'active'
 			 ORDER BY d.created_at DESC LIMIT ?`
 		)
-		.all(board_id, limit(8)) as { question: string; choice: string | null; status: string }[])
-		.map((d) => `- ${d.question}${d.choice ? ` → ${d.choice}` : ' (unresolved)'}`);
+		.all(board_id, limit(8)) as {
+			question: string;
+			ref: string | null;
+			options: string;
+			choice: string | null;
+			block_count: number;
+		}[])
+		.map((d) => {
+			let options: string[] = [];
+			try {
+				const parsed = JSON.parse(d.options);
+				options = Array.isArray(parsed) ? (parsed as string[]) : [];
+			} catch {
+				// leave options as empty array
+			}
+			const refTag = d.ref ? `[${d.ref}] ` : '';
+			const optionsStr = options.length > 0 ? options.join(', ') : 'free-form';
+			const tail = d.choice ? ` → ${d.choice}` : ' (unresolved) (answer: bb_decision_resolve)';
+			return `- ${refTag}${d.question} — options: ${optionsStr} (blocks: ${d.block_count})${tail}`;
+		});
 
 	const concepts = (db
 		.prepare(

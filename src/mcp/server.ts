@@ -19,6 +19,9 @@ import {
 	updateDecision,
 	deleteDecision,
 	listDecisions,
+	getDecision,
+	recordDecision,
+	resolveDecision,
 	getThreadForItem,
 	createThread,
 	createMessage,
@@ -297,6 +300,56 @@ server.registerTool(
 );
 
 server.registerTool(
+	'bb_decide',
+	{
+		title: 'Propose a decision',
+		description:
+			'Propose a decision: creates the decision item + decision record + seeded thread under one short ref, so it is addressable from chat, the board, and any agent. Answer it later with bb_decision_resolve.',
+		inputSchema: {
+			question: z.string(),
+			options: z.array(z.string()).optional(),
+			why: z.string().optional(),
+			rec: z.string().optional().describe('Recommended option'),
+			board: z.string().optional().describe('Board for the decision item (default: the default board)')
+		}
+	},
+	({ question, options, why, rec, board }) =>
+		run(() => recordDecision({ question, options, why, rec, board_id: board }))
+);
+
+server.registerTool(
+	'bb_decision_resolve',
+	{
+		title: 'Resolve a decision',
+		description:
+			'Answer a decision by ref: sets the choice, posts the answer to the decision thread, marks the decision item done, and unblocks any items blocked on it. Idempotent for the same choice.',
+		inputSchema: {
+			ref: z.string().describe('Decision ref (or the ref of its decision item)'),
+			choice: z.string().describe(
+				'Chosen option: option text, an option index (e.g. "2"), or free text when there are no options'
+			),
+			rationale: z.string().optional()
+		}
+	},
+	({ ref, choice, rationale }) => run(() => resolveDecision(ref, choice, rationale))
+);
+
+server.registerTool(
+	'bb_decision_get',
+	{
+		title: 'Get a decision',
+		description: 'Fetch one decision by ref (or id).',
+		inputSchema: {
+			ref: z.string().describe('Decision ref (or decision id)')
+		}
+	},
+	({ ref }) => {
+		const decision = getDecision(ref);
+		return decision ? text(decision) : fail(`no decision with ref ${ref}`);
+	}
+);
+
+server.registerTool(
 	'bb_decision_add',
 	{
 		title: 'Record a decision',
@@ -336,15 +389,23 @@ server.registerTool(
 		description:
 			'Update a recorded decision: mark it superseded, change its chosen option, or fix its rationale. Only the provided fields change.',
 		inputSchema: {
-			decision_id: z.string(),
+			decision_id: z.string().optional().describe('Decision id; omit when ref is given'),
+			ref: z.string().optional().describe('Decision ref; resolved to an id first'),
 			status: z.enum(['active', 'superseded']).optional(),
 			choice: z.string().optional(),
 			rationale: z.string().optional()
 		}
 	},
-	({ decision_id, status, choice, rationale }) => {
-		const decision = updateDecision(decision_id, { status, choice, rationale });
-		return decision ? text(decision) : fail(`no decision with id ${decision_id}`);
+	({ decision_id, ref, status, choice, rationale }) => {
+		let id = decision_id;
+		if (!id) {
+			if (!ref) return fail('decision_id or ref is required');
+			const decision = getDecision(ref);
+			if (!decision) return fail(`no decision with ref ${ref}`);
+			id = decision.id;
+		}
+		const decision = updateDecision(id, { status, choice, rationale });
+		return decision ? text(decision) : fail(`no decision with id ${id}`);
 	}
 );
 

@@ -141,7 +141,7 @@ describe('search (FTS5)', () => {
 
 			const brief = buildBrief();
 			expect(brief).toContain('ship it');
-			expect(brief).toContain('Q? → A');
+			expect(brief).toContain('Q? — options: free-form (blocks: 0) → A');
 			expect(brief).toContain('C: a definition');
 			expect(brief.length).toBeLessThan(2000);
 		});

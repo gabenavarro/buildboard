@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
 // Server-only module. Domain types/constants live in ./types.js (client-safe);
@@ -9,6 +9,10 @@ export * from './types.js';
 
 export function newId(): string {
 	return randomUUID();
+}
+
+export function newRef(): string {
+	return randomBytes(2).toString('hex');
 }
 
 let db: DatabaseSync | null = null;
@@ -250,10 +254,38 @@ export const MIGRATIONS = [
 	DROP TABLE decisions_bak;
 	DROP TABLE concepts_bak;
 	DROP TABLE agent_tasks_bak;
-	INSERT INTO fts_items(fts_items) VALUES('rebuild')`
+	INSERT INTO fts_items(fts_items) VALUES('rebuild')`,
+	// Short refs (4 hex) addressing items/decisions/concepts from chat, board, and agents
+	`ALTER TABLE items ADD COLUMN ref TEXT;
+	ALTER TABLE decisions ADD COLUMN ref TEXT;
+	ALTER TABLE concepts ADD COLUMN ref TEXT;
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_items_ref ON items(ref) WHERE ref IS NOT NULL;
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_decisions_ref ON decisions(ref) WHERE ref IS NOT NULL;
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_concepts_ref ON concepts(ref) WHERE ref IS NOT NULL;`
 ];
 
 const MIGRATION_NAMES = MIGRATIONS.map((_, i) => `m${String(i).padStart(3, '0')}`);
+
+const REF_TABLES = ['items', 'decisions', 'concepts'] as const;
+
+function refExists(database: DatabaseSync, ref: string): boolean {
+	for (const table of REF_TABLES) {
+		if (database.prepare(`SELECT 1 FROM ${table} WHERE ref = ?`).get(ref)) return true;
+	}
+	return false;
+}
+
+function backfillRefs(database: DatabaseSync): void {
+	for (const table of REF_TABLES) {
+		const rows = database.prepare(`SELECT id FROM ${table} WHERE ref IS NULL`).all() as { id: string }[];
+		const set = database.prepare(`UPDATE ${table} SET ref = ? WHERE id = ?`);
+		for (const row of rows) {
+			let ref = newRef();
+			while (refExists(database, ref)) ref = newRef();
+			set.run(ref, row.id);
+		}
+	}
+}
 
 function migrate(database: DatabaseSync): void {
 	database.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -265,6 +297,7 @@ function migrate(database: DatabaseSync): void {
 	const applied = new Set(
 		database.prepare('SELECT name FROM schema_migrations').all().map((r) => (r.name as string))
 	);
+	const needsRefBackfill = !applied.has(MIGRATION_NAMES[MIGRATIONS.length - 1]);
 	MIGRATIONS.forEach((sql, i) => {
 		const name = MIGRATION_NAMES[i];
 		if (!applied.has(name)) {
@@ -272,5 +305,6 @@ function migrate(database: DatabaseSync): void {
 			database.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(name);
 		}
 	});
+	if (needsRefBackfill) backfillRefs(database);
 	database.exec('COMMIT');
 }

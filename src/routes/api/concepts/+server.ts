@@ -16,7 +16,8 @@ export const POST: RequestHandler = handle(async ({ request }) => {
 		definition: typeof body.definition === 'string' ? body.definition : '',
 		details_md: typeof body.details_md === 'string' ? body.details_md : '',
 		source: typeof body.source === 'string' ? body.source : null,
-		item_id: typeof body.item_id === 'string' ? body.item_id : null
+		item_id: typeof body.item_id === 'string' ? body.item_id : null,
+		ref: typeof body.ref === 'string' ? body.ref : undefined
 	});
 	return json(concept, 201);
 });
