@@ -22,8 +22,23 @@ export const GET: RequestHandler<Params> = async ({ params, request }) => {
 	const encoder = new TextEncoder();
 	const stream = new ReadableStream({
 		start(controller) {
+			let closed = false;
+			const close = () => {
+				if (closed) return;
+				closed = true;
+				try {
+					controller.close();
+				} catch {
+					// already closed by the runtime — safe to ignore
+				}
+			};
 			const send = (event: string, data: unknown) => {
-				controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+				if (closed) return;
+				try {
+					controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+				} catch {
+					close();
+				}
 			};
 
 			send('hello', { board_id: params.id, at: new Date().toISOString() });
@@ -35,7 +50,7 @@ export const GET: RequestHandler<Params> = async ({ params, request }) => {
 			request.signal.addEventListener('abort', () => {
 				clearInterval(ping);
 				unsub();
-				controller.close();
+				close();
 			});
 		}
 	});
