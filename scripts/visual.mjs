@@ -189,6 +189,17 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(200);
 
+  // Detail panel Lexical editor renders with a toolbar and accepts input.
+  await page.locator('.svelte-flow__node .card').first().click();
+  await page.waitForTimeout(500);
+  check('lexical editor renders', (await page.locator('.panel .lex-root').count()) === 1);
+  check('editor toolbar renders', (await page.locator('.panel .toolbar').count()) === 1);
+  await page.locator('.panel .lex-root').click();
+  await page.keyboard.type('Visual body');
+  await page.waitForTimeout(400);
+  const bodyText = await page.locator('.panel .lex-root').textContent();
+  check('editor accepts input', (bodyText || '').includes('Visual body'), bodyText?.slice(0, 30));
+
   // Theme toggle: switches to dark and updates the root.
   await page.locator('.boards button[aria-label="Toggle light/dark theme"]').click();
   await page.waitForTimeout(400);
