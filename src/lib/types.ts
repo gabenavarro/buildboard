@@ -28,6 +28,7 @@ export interface Item {
 	tags: string[];
 	parent_id: string | null;
 	board_id: string;
+	ref?: string | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -66,6 +67,7 @@ export interface Decision {
 	choice: string | null;
 	rationale: string;
 	status: DecisionStatus;
+	ref?: string | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -77,6 +79,7 @@ export interface Concept {
 	details_md: string;
 	source: string | null;
 	item_id: string | null;
+	ref?: string | null;
 	created_at: string;
 	updated_at: string;
 }

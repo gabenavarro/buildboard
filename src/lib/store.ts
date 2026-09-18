@@ -1,4 +1,5 @@
-import { getDb, newId, ITEM_KINDS, ITEM_STATUSES } from './db.js';
+import type { DatabaseSync } from 'node:sqlite';
+import { getDb, newId, newRef, ITEM_KINDS, ITEM_STATUSES } from './db.js';
 import type {
 	Item,
 	Edge,
@@ -33,6 +34,49 @@ export class StoreError extends Error {
 
 const DECISION_STATUSES: DecisionStatus[] = ['active', 'superseded'];
 
+const REF_TABLES = ['items', 'decisions', 'concepts'] as const;
+
+function refTakenIn(db: DatabaseSync, table: (typeof REF_TABLES)[number], ref: string): boolean {
+	return db.prepare(`SELECT 1 FROM ${table} WHERE ref = ?`).get(ref) !== undefined;
+}
+
+function refTaken(db: DatabaseSync, ref: string): boolean {
+	for (const table of REF_TABLES) {
+		if (refTakenIn(db, table, ref)) return true;
+	}
+	return false;
+}
+
+function newUniqueRef(db: DatabaseSync): string {
+	for (let i = 0; i < 10; i++) {
+		const ref = newRef();
+		if (!refTaken(db, ref)) return ref;
+	}
+	return newRef();
+}
+
+function allocateRef(db: DatabaseSync, ref: string | undefined, table: (typeof REF_TABLES)[number]): string {
+	if (ref === undefined) return newUniqueRef(db);
+	if (refTakenIn(db, table, ref)) throw new StoreError(409, `ref already in use: ${ref}`);
+	return ref;
+}
+
+function insertWithRef<T>(
+	db: DatabaseSync,
+	refHint: string | undefined,
+	table: (typeof REF_TABLES)[number],
+	insert: (ref: string) => T
+): T {
+	try {
+		return insert(allocateRef(db, refHint, table));
+	} catch (e) {
+		if (!(e instanceof Error && /UNIQUE constraint failed/i.test(e.message) && /ref/.test(e.message))) {
+			throw e;
+		}
+		return insert(allocateRef(db, refHint, table));
+	}
+}
+
 function parseTags(raw: string): string[] {
 	try {
 		const v = JSON.parse(raw);
@@ -56,6 +100,7 @@ function rowToItem(row: Record<string, unknown>): Item {
 		tags: parseTags(row.tags as string),
 		parent_id: (row.parent_id as string | null) ?? null,
 		board_id: (row.board_id as string) ?? 'default',
+		ref: (row.ref as string | null) ?? null,
 		created_at: row.created_at as string,
 		updated_at: row.updated_at as string
 	};
@@ -73,6 +118,7 @@ export interface CreateItemInput {
 	tags?: string[];
 	parent_id?: string | null;
 	board_id?: string;
+	ref?: string;
 }
 
 export function validateCreateItem(input: Record<string, unknown>): { ok: true; value: CreateItemInput } | { ok: false; error: string } {
@@ -104,7 +150,8 @@ export function validateCreateItem(input: Record<string, unknown>): { ok: true; 
 			status,
 			tags: Array.isArray(tags) ? tags.filter((t) => typeof t === 'string') : [],
 			parent_id: typeof input.parent_id === 'string' ? input.parent_id : null,
-			board_id: typeof input.board_id === 'string' ? input.board_id : 'default'
+			board_id: typeof input.board_id === 'string' ? input.board_id : 'default',
+			ref: typeof input.ref === 'string' ? input.ref : undefined
 		}
 	};
 }
@@ -118,22 +165,27 @@ export function createItem(input: CreateItemInput): Item {
 		throw new StoreError(404, `board not found: ${input.board_id}`);
 	}
 	const id = newId();
-	db.prepare(
-		`INSERT INTO items (id, kind, title, body_md, x, y, w, h, status, tags, parent_id, board_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	).run(
-		id,
-		input.kind ?? 'note',
-		input.title,
-		input.body_md ?? '',
-		input.x ?? 0,
-		input.y ?? 0,
-		input.w ?? null,
-		input.h ?? null,
-		input.status ?? 'open',
-		JSON.stringify(input.tags ?? []),
-		input.parent_id ?? null,
-		input.board_id ?? 'default'
+	insertWithRef(db, input.ref, 'items', (ref) =>
+		db
+			.prepare(
+				`INSERT INTO items (id, kind, title, body_md, x, y, w, h, status, tags, parent_id, board_id, ref)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			)
+			.run(
+				id,
+				input.kind ?? 'note',
+				input.title,
+				input.body_md ?? '',
+				input.x ?? 0,
+				input.y ?? 0,
+				input.w ?? null,
+				input.h ?? null,
+				input.status ?? 'open',
+				JSON.stringify(input.tags ?? []),
+				input.parent_id ?? null,
+				input.board_id ?? 'default',
+				ref
+			)
 	);
 	return getItem(id)!;
 }
@@ -169,9 +221,10 @@ export function listItems(
 	return rows.map((r) => rowToItem(r as Record<string, unknown>));
 }
 
-export function getItem(id: string): Item | null {
+export function getItem(idOrRef: string): Item | null {
 	const db = getDb();
-	const row = db.prepare('SELECT * FROM items WHERE id = ?').get(id);
+	let row = db.prepare('SELECT * FROM items WHERE id = ?').get(idOrRef);
+	if (!row) row = db.prepare('SELECT * FROM items WHERE ref = ?').get(idOrRef);
 	return row ? rowToItem(row as Record<string, unknown>) : null;
 }
 
@@ -207,6 +260,10 @@ export function updateItem(id: string, patch: Record<string, unknown>): Item | n
 			throw new StoreError(404, `parent item not found: ${patch.parent_id}`);
 		}
 		fields.parent_id = patch.parent_id;
+	}
+	if (typeof patch.ref === 'string') {
+		if (refTakenIn(db, 'items', patch.ref)) throw new StoreError(409, `ref already in use: ${patch.ref}`);
+		fields.ref = patch.ref;
 	}
 
 	if (Object.keys(fields).length === 0) return existing;
@@ -261,22 +318,27 @@ export function duplicateItem(
 	const board_id = opts.board_id ?? source.board_id;
 	if (!getBoard(board_id)) throw new StoreError(404, `board not found: ${board_id}`);
 	const copyId = newId();
-	db.prepare(
-		`INSERT INTO items (id, kind, title, body_md, x, y, w, h, status, tags, parent_id, board_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	).run(
-		copyId,
-		source.kind,
-		opts.title_suffix ? `${source.title}${opts.title_suffix}` : source.title,
-		source.body_md,
-		source.x + 30,
-		source.y + 30,
-		source.w,
-		source.h,
-		source.status,
-		JSON.stringify(source.tags),
-		source.parent_id,
-		board_id
+	insertWithRef(db, undefined, 'items', (ref) =>
+		db
+			.prepare(
+				`INSERT INTO items (id, kind, title, body_md, x, y, w, h, status, tags, parent_id, board_id, ref)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			)
+			.run(
+				copyId,
+				source.kind,
+				opts.title_suffix ? `${source.title}${opts.title_suffix}` : source.title,
+				source.body_md,
+				source.x + 30,
+				source.y + 30,
+				source.w,
+				source.h,
+				source.status,
+				JSON.stringify(source.tags),
+				source.parent_id,
+				board_id,
+				ref
+			)
 	);
 	return getItem(copyId);
 }
@@ -493,6 +555,7 @@ export interface CreateDecisionInput {
 	options?: string[];
 	choice?: string | null;
 	rationale?: string;
+	ref?: string;
 }
 
 export function createDecision(input: CreateDecisionInput): Decision {
@@ -501,17 +564,24 @@ export function createDecision(input: CreateDecisionInput): Decision {
 		throw new StoreError(404, `item not found: ${input.item_id}`);
 	}
 	const id = newId();
-	db.prepare(
-		`INSERT INTO decisions (id, item_id, question, options, choice, rationale) VALUES (?, ?, ?, ?, ?, ?)`
-	).run(
-		id,
-		input.item_id ?? null,
-		input.question,
-		JSON.stringify(input.options ?? []),
-		input.choice ?? null,
-		input.rationale ?? ''
+	insertWithRef(db, input.ref, 'decisions', (ref) =>
+		db
+			.prepare(
+				`INSERT INTO decisions (id, item_id, question, options, choice, rationale, ref)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`
+			)
+			.run(
+				id,
+				input.item_id ?? null,
+				input.question,
+				JSON.stringify(input.options ?? []),
+				input.choice ?? null,
+				input.rationale ?? '',
+				ref
+			)
 	);
-	return db.prepare('SELECT * FROM decisions WHERE id = ?').get(id) as unknown as Decision;
+	const row = db.prepare('SELECT * FROM decisions WHERE id = ?').get(id);
+	return rowToDecision(row as Record<string, unknown>);
 }
 
 function rowToDecision(row: Record<string, unknown>): Decision {
@@ -530,12 +600,13 @@ function rowToDecision(row: Record<string, unknown>): Decision {
 		choice: (row.choice as string | null) ?? null,
 		rationale: row.rationale as string,
 		status: row.status as DecisionStatus,
+		ref: (row.ref as string | null) ?? null,
 		created_at: row.created_at as string,
 		updated_at: row.updated_at as string
 	};
 }
 
-export function listDecisions(filter: { item_id?: string; status?: string } = {}): Decision[] {
+export function listDecisions(filter: { item_id?: string; status?: string; ref?: string } = {}): Decision[] {
 	const db = getDb();
 	const where: string[] = [];
 	const params: (string | number)[] = [];
@@ -547,13 +618,18 @@ export function listDecisions(filter: { item_id?: string; status?: string } = {}
 		where.push('status = ?');
 		params.push(filter.status);
 	}
+	if (filter.ref) {
+		where.push('ref = ?');
+		params.push(filter.ref);
+	}
 	const sql = `SELECT * FROM decisions ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY created_at DESC`;
 	return db.prepare(sql).all(...params).map((r) => rowToDecision(r as Record<string, unknown>));
 }
 
-export function getDecision(id: string): Decision | null {
+export function getDecision(idOrRef: string): Decision | null {
 	const db = getDb();
-	const row = db.prepare('SELECT * FROM decisions WHERE id = ?').get(id);
+	let row = db.prepare('SELECT * FROM decisions WHERE id = ?').get(idOrRef);
+	if (!row) row = db.prepare('SELECT * FROM decisions WHERE ref = ?').get(idOrRef);
 	return row ? rowToDecision(row as Record<string, unknown>) : null;
 }
 
@@ -574,6 +650,10 @@ export function updateDecision(id: string, patch: Record<string, unknown>): Deci
 		}
 		fields.status = patch.status;
 	}
+	if (typeof patch.ref === 'string') {
+		if (refTakenIn(db, 'decisions', patch.ref)) throw new StoreError(409, `ref already in use: ${patch.ref}`);
+		fields.ref = patch.ref;
+	}
 	if (Object.keys(fields).length === 0) return getDecision(id);
 	const sets = Object.keys(fields).map((k) => `${k} = ?`);
 	db.prepare(`UPDATE decisions SET ${sets.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(
@@ -589,6 +669,192 @@ export function deleteDecision(id: string): boolean {
 	return res.changes > 0;
 }
 
+export interface ResolvedRef {
+	source: 'item' | 'decision' | 'concept';
+	id: string;
+	ref: string;
+	title: string;
+	status: string | null;
+	board_id: string | null;
+}
+
+export function resolveRef(ref: string): ResolvedRef | null {
+	const db = getDb();
+	const itemRow = db.prepare('SELECT * FROM items WHERE ref = ?').get(ref);
+	if (itemRow) {
+		const item = rowToItem(itemRow as Record<string, unknown>);
+		return {
+			source: 'item',
+			id: item.id,
+			ref: item.ref ?? ref,
+			title: item.title,
+			status: item.status,
+			board_id: item.board_id
+		};
+	}
+	const decisionRow = db.prepare('SELECT * FROM decisions WHERE ref = ?').get(ref);
+	if (decisionRow) {
+		const decision = rowToDecision(decisionRow as Record<string, unknown>);
+		const attached = decision.item_id ? getItem(decision.item_id) : null;
+		return {
+			source: 'decision',
+			id: decision.id,
+			ref: decision.ref ?? ref,
+			title: decision.question,
+			status: decision.status,
+			board_id: attached ? attached.board_id : null
+		};
+	}
+	const conceptRow = db.prepare('SELECT * FROM concepts WHERE ref = ?').get(ref);
+	if (conceptRow) {
+		const concept = rowToConcept(conceptRow as Record<string, unknown>);
+		const attached = concept.item_id ? getItem(concept.item_id) : null;
+		return {
+			source: 'concept',
+			id: concept.id,
+			ref: concept.ref ?? ref,
+			title: concept.name,
+			status: null,
+			board_id: attached ? attached.board_id : null
+		};
+	}
+	return null;
+}
+
+export interface RecordDecisionInput {
+	question: string;
+	options?: string[];
+	why?: string;
+	rec?: string;
+	ref?: string;
+	board_id?: string;
+}
+
+export function recordDecision(input: RecordDecisionInput): { ref: string; item: Item; decision: Decision } {
+	const db = getDb();
+	const board_id = input.board_id ?? 'default';
+	if (!getBoard(board_id)) throw new StoreError(404, `board not found: ${board_id}`);
+	let ref: string;
+	if (input.ref === undefined) {
+		ref = newUniqueRef(db);
+	} else if (refTaken(db, input.ref)) {
+		throw new StoreError(409, `ref already in use: ${input.ref}`);
+	} else {
+		ref = input.ref;
+	}
+	const bodyParts: string[] = [];
+	if (input.why) bodyParts.push(`Why: ${input.why}`);
+	if (input.rec) bodyParts.push(`Rec: ${input.rec}`);
+	db.exec('BEGIN');
+	try {
+		const item = createItem({
+			kind: 'decision',
+			title: input.question,
+			body_md: bodyParts.join('\n\n'),
+			board_id,
+			ref
+		});
+		const decision = createDecision({
+			item_id: item.id,
+			question: input.question,
+			options: input.options ?? [],
+			choice: null,
+			rationale: input.why ?? '',
+			ref
+		});
+		const thread = createThread(`Discussion: ${input.question}`, item.id);
+		createMessage({ thread_id: thread.id, role: 'system', content: input.question });
+		db.exec('COMMIT');
+		return { ref, item, decision };
+	} catch (e) {
+		db.exec('ROLLBACK');
+		throw e;
+	}
+}
+
+function normalizeAnswer(options: string[], answer: string): string {
+	const trimmed = answer.trim();
+	const exact = options.find((o) => o.toLowerCase() === trimmed.toLowerCase());
+	if (exact) return exact;
+	const match = /^(?:option\s+)?(\d+)$/i.exec(trimmed);
+	if (match) {
+		const index = Number(match[1]) - 1;
+		if (index >= 0 && index < options.length) return options[index];
+	}
+	if (options.length === 0) return trimmed;
+	throw new StoreError(400, `answer must be one of: ${options.join(', ')}`);
+}
+
+export function unblock(itemId: string): Item | null {
+	const db = getDb();
+	const item = getItem(itemId);
+	if (!item) return null;
+	if (item.status !== 'blocked') return item;
+	db.prepare(`UPDATE items SET status = 'open', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(
+		itemId
+	);
+	return getItem(itemId);
+}
+
+export function resolveDecision(
+	ref: string,
+	answer: string,
+	rationale?: string
+): { decision: Decision; item: Item; unblocked: Item[] } {
+	const db = getDb();
+	let decision = getDecision(ref);
+	let item: Item | null = decision?.item_id ? getItem(decision.item_id) : null;
+	if (!decision || !item) {
+		const candidate = resolveRef(ref);
+		if (candidate?.source !== 'item') throw new StoreError(404, `no decision with ref ${ref}`);
+		item = getItem(candidate.id);
+		decision = listDecisions({ item_id: candidate.id }).find((d) => d.status === 'active') ?? null;
+	}
+	if (!decision || !item) throw new StoreError(404, `no decision with ref ${ref}`);
+
+	const choice = normalizeAnswer(decision.options, answer);
+	if (decision.choice === choice) {
+		return { decision, item, unblocked: [] };
+	}
+
+	db.exec('BEGIN');
+	try {
+		db
+			.prepare(`UPDATE decisions SET choice = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`)
+			.run(choice, decision.id);
+		const thread = getThreadForItem(item.id) ?? createThread(`Discussion: ${item.title}`, item.id);
+		let content = `Resolved: ${decision.question} → ${choice}`;
+		if (rationale) content += `\n${rationale}`;
+		createMessage({
+			thread_id: thread.id,
+			role: 'system',
+			content,
+			meta: JSON.stringify({ ref, decision_id: decision.id })
+		});
+		db
+			.prepare(`UPDATE items SET status = 'done', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`)
+			.run(item.id);
+		const unblocked: Item[] = [];
+		const edges = db
+			.prepare(`SELECT from_id FROM edges WHERE kind = 'blocks' AND to_id = ?`)
+			.all(item.id) as { from_id: string }[];
+		for (const edge of edges) {
+			if (getItem(edge.from_id)?.status === 'blocked') {
+				const freed = unblock(edge.from_id);
+				if (freed) unblocked.push(freed);
+			}
+		}
+		db.exec('COMMIT');
+		const finalDecision = getDecision(decision.id);
+		const finalItem = getItem(item.id);
+		if (!finalDecision || !finalItem) throw new Error('decision or item disappeared during resolve');
+		return { decision: finalDecision, item: finalItem, unblocked };
+	} catch (e) {
+		db.exec('ROLLBACK');
+		throw e;
+	}
+}
+
 // ---------- concepts ----------
 
 export interface CreateConceptInput {
@@ -597,6 +863,21 @@ export interface CreateConceptInput {
 	details_md?: string;
 	source?: string | null;
 	item_id?: string | null;
+	ref?: string;
+}
+
+function rowToConcept(row: Record<string, unknown>): Concept {
+	return {
+		id: row.id as string,
+		name: row.name as string,
+		definition: row.definition as string,
+		details_md: row.details_md as string,
+		source: (row.source as string | null) ?? null,
+		item_id: (row.item_id as string | null) ?? null,
+		ref: (row.ref as string | null) ?? null,
+		created_at: row.created_at as string,
+		updated_at: row.updated_at as string
+	};
 }
 
 export function createConcept(input: CreateConceptInput): Concept {
@@ -605,34 +886,44 @@ export function createConcept(input: CreateConceptInput): Concept {
 		throw new StoreError(404, `item not found: ${input.item_id}`);
 	}
 	const id = newId();
-	db.prepare(
-		`INSERT INTO concepts (id, name, definition, details_md, source, item_id) VALUES (?, ?, ?, ?, ?, ?)`
-	).run(
-		id,
-		input.name,
-		input.definition ?? '',
-		input.details_md ?? '',
-		input.source ?? null,
-		input.item_id ?? null
+	insertWithRef(db, input.ref, 'concepts', (ref) =>
+		db
+			.prepare(
+				`INSERT INTO concepts (id, name, definition, details_md, source, item_id, ref)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`
+			)
+			.run(
+				id,
+				input.name,
+				input.definition ?? '',
+				input.details_md ?? '',
+				input.source ?? null,
+				input.item_id ?? null,
+				ref
+			)
 	);
-	return db.prepare('SELECT * FROM concepts WHERE id = ?').get(id) as unknown as Concept;
+	return getConcept(id)!;
 }
 
 export function listConcepts(): Concept[] {
 	const db = getDb();
-	return db.prepare('SELECT * FROM concepts ORDER BY name').all() as unknown as Concept[];
+	return db
+		.prepare('SELECT * FROM concepts ORDER BY name')
+		.all()
+		.map((r) => rowToConcept(r as Record<string, unknown>));
 }
 
-export function getConcept(id: string): Concept | null {
+export function getConcept(idOrRef: string): Concept | null {
 	const db = getDb();
-	const row = db.prepare('SELECT * FROM concepts WHERE id = ?').get(id);
-	return row ? (row as unknown as Concept) : null;
+	let row = db.prepare('SELECT * FROM concepts WHERE id = ?').get(idOrRef);
+	if (!row) row = db.prepare('SELECT * FROM concepts WHERE ref = ?').get(idOrRef);
+	return row ? rowToConcept(row as Record<string, unknown>) : null;
 }
 
 export function getConceptForItem(item_id: string): Concept | null {
 	const db = getDb();
 	const row = db.prepare('SELECT * FROM concepts WHERE item_id = ? LIMIT 1').get(item_id);
-	return row ? (row as unknown as Concept) : null;
+	return row ? rowToConcept(row as Record<string, unknown>) : null;
 }
 
 export function updateConcept(id: string, patch: Record<string, unknown>): Concept | null {
@@ -648,6 +939,10 @@ export function updateConcept(id: string, patch: Record<string, unknown>): Conce
 	if (typeof patch.definition === 'string') fields.definition = patch.definition;
 	if (typeof patch.details_md === 'string') fields.details_md = patch.details_md;
 	if (patch.source === null || typeof patch.source === 'string') fields.source = patch.source;
+	if (typeof patch.ref === 'string') {
+		if (refTakenIn(db, 'concepts', patch.ref)) throw new StoreError(409, `ref already in use: ${patch.ref}`);
+		fields.ref = patch.ref;
+	}
 	if (Object.keys(fields).length === 0) return getConcept(id);
 	const sets = Object.keys(fields).map((k) => `${k} = ?`);
 	db.prepare(`UPDATE concepts SET ${sets.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(

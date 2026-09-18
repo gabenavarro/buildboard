@@ -19,7 +19,7 @@ afterAll(() => {
 describe('text-label migration (rebuild items CHECK)', () => {
 	it('upgrades an old-schema DB with data, keeps rows, allows kind=text, and re-syncs FTS', async () => {
 		const { MIGRATIONS, getDb } = await import('./db.js');
-		const TEXT_MIG_COUNT = 3;
+		const TEXT_MIG_COUNT = 4;
 		const oldMigrations = MIGRATIONS.slice(0, -TEXT_MIG_COUNT);
 
 		// Seed a pre-text database: apply every migration except the text rebuild,
