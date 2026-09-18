@@ -111,7 +111,7 @@ try {
   await fetch(`${BASE}/api/edges`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ from_id: va.id, to_id: vb.id, kind: 'depends_on', board_id: 'default' })
+    body: JSON.stringify({ from_id: va.id, to_id: vb.id, kind: 'depends_on', label: 'depends on', board_id: 'default' })
   });
 
   browser = await chromium.launch();
@@ -208,6 +208,27 @@ try {
   await page.waitForTimeout(200);
   const edgeEditor = page.locator('.edge-editor');
   check('edge editor opens on edge select', (await edgeEditor.count()) === 1, `count=${await edgeEditor.count()}`);
+
+  // Edge-label text contrast (SVG fill vs page background) >= 4.5:1.
+  const edgeLabelContrast = await page.evaluate(() => {
+    const t = document.querySelector('.svelte-flow__edge-label');
+    if (!t) return 0;
+    const fill = getComputedStyle(t).color;
+    const bg = getComputedStyle(document.body).backgroundColor;
+    /** @param {string} rgb */
+    const lum = (rgb) => {
+      const [r, g, b] = rgb.replace('rgb(', '').replace(')', '').split(',').map((v) => {
+        const c = Number(v) / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const a = lum(fill);
+    const b2 = lum(bg);
+    const [hi, lo] = a > b2 ? [a, b2] : [b2, a];
+    return (hi + 0.05) / (lo + 0.05);
+  });
+  check('edge label contrast >= 4.5:1', edgeLabelContrast >= 4.5, `ratio=${edgeLabelContrast.toFixed(2)}`);
 
   // Motion: node entrance animation is declared on cards.
   const anim = await card.evaluate((el) => getComputedStyle(el).animationName);

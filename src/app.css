@@ -216,13 +216,12 @@ textarea:focus {
 .svelte-flow__edge:focus .svelte-flow__edge-path {
 	stroke: var(--accent);
 }
-.svelte-flow__edge-text {
+.svelte-flow__edge-labels,
+.svelte-flow__edge-label {
 	font-size: 11px;
-	fill: var(--text-dim);
+	color: var(--text);
 	font-family: var(--font-sans);
-}
-.svelte-flow__edge-textbg {
-	fill: var(--bg);
+	pointer-events: none;
 }
 .svelte-flow__handle {
 	width: 9px;
