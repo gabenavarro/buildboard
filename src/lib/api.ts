@@ -118,6 +118,13 @@ export const api = {
 		source?: string | null;
 		item_id?: string | null;
 	}) => request<Concept>('/api/concepts', { method: 'POST', body: JSON.stringify(input) }),
+	upsertConcept: (input: {
+		name: string;
+		definition?: string;
+		details_md?: string;
+		source?: string | null;
+		item_id?: string | null;
+	}) => request<Concept>('/api/concepts/upsert', { method: 'POST', body: JSON.stringify(input) }),
 	updateConcept: (id: string, patch: Partial<Concept>) =>
 		request<Concept>(`/api/concepts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 	deleteConcept: (id: string) => request<{ ok: boolean }>(`/api/concepts/${id}`, { method: 'DELETE' }),

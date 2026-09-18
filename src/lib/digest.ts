@@ -90,14 +90,19 @@ export function buildBrief(opts: BriefOptions = {}): string {
 			return `- ${refTag}${d.question} — options: ${optionsStr} (blocks: ${d.block_count})${tail}`;
 		});
 
+	// Glossary: board-scoped concepts plus detached (board-independent) terms.
 	const concepts = (db
 		.prepare(
-			`SELECT c.name, c.definition FROM concepts c
-			 JOIN items i ON i.id = c.item_id
-			 WHERE i.board_id = ? ORDER BY c.name LIMIT ?`
+			`SELECT c.name, c.definition, c.ref FROM concepts c
+			 LEFT JOIN items i ON i.id = c.item_id
+			 WHERE i.board_id = ? OR c.item_id IS NULL
+			 ORDER BY c.name LIMIT ?`
 		)
-		.all(board_id, limit(10)) as { name: string; definition: string }[])
-		.map((c) => `- ${c.name}: ${c.definition.slice(0, 80)}`);
+		.all(board_id, limit(10)) as { name: string; definition: string; ref: string | null }[])
+		.map((c) => {
+			const refTag = c.ref ? `[${c.ref}] ` : '';
+			return `- ${refTag}${c.name}: ${c.definition.slice(0, 80)}`;
+		});
 
 	const recentMsgs = (db
 		.prepare(
@@ -127,7 +132,7 @@ export function buildBrief(opts: BriefOptions = {}): string {
 		section('Counts', countsLines),
 		section('Open work', openTasks),
 		section('Active decisions', decisions),
-		section('Concepts', concepts),
+		section('Glossary', concepts),
 		section('Recent messages', recentMsgs),
 		section('Agent tasks', agentTasks)
 	]

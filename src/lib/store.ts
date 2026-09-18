@@ -965,6 +965,45 @@ export function updateConcept(id: string, patch: Record<string, unknown>): Conce
 	return getConcept(id);
 }
 
+export function getConceptByName(name: string): Concept | null {
+	const key = name.trim().toLowerCase();
+	if (!key) return null;
+	for (const c of listConcepts()) {
+		if (c.name.trim().toLowerCase() === key) return c;
+	}
+	return null;
+}
+
+export interface UpsertConceptInput {
+	definition?: string;
+	details_md?: string;
+	source?: string | null;
+	item_id?: string | null;
+	ref?: string;
+}
+
+export function upsertConceptByName(name: string, input: UpsertConceptInput = {}): Concept {
+	const trimmed = name.trim();
+	if (!trimmed) throw new StoreError(400, 'name is required');
+	const existing = getConceptByName(trimmed);
+	if (existing) {
+		const patch: Record<string, unknown> = {};
+		if (input.definition !== undefined) patch.definition = input.definition;
+		if (input.details_md !== undefined) patch.details_md = input.details_md;
+		if (input.source !== undefined) patch.source = input.source;
+		if (Object.keys(patch).length === 0) return existing;
+		return updateConcept(existing.id, patch) ?? existing;
+	}
+	return createConcept({
+		name: trimmed,
+		definition: input.definition,
+		details_md: input.details_md,
+		source: input.source ?? null,
+		item_id: input.item_id ?? null,
+		ref: input.ref
+	});
+}
+
 export function deleteConcept(id: string): boolean {
 	const db = getDb();
 	const res = db.prepare('DELETE FROM concepts WHERE id = ?').run(id);

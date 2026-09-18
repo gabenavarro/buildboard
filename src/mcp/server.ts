@@ -30,7 +30,7 @@ import {
 	listConcepts,
 	getConcept,
 	getConceptForItem,
-	createConcept,
+	upsertConceptByName,
 	updateConcept,
 	deleteConcept,
 	listBoards,
@@ -457,9 +457,9 @@ server.registerTool(
 server.registerTool(
 	'bb_concept_add',
 	{
-		title: 'Create a concept',
+		title: 'Create or update a concept',
 		description:
-			'Create a concept card (name, definition, optional details/source) optionally attached to a board item.',
+			'Create a concept card (name, definition, optional details/source) optionally attached to a board item. Idempotent by name: re-adding an existing term updates its definition/details instead of duplicating.',
 		inputSchema: {
 			name: z.string(),
 			definition: z.string().optional(),
@@ -470,7 +470,7 @@ server.registerTool(
 	},
 	({ name, definition, details_md, source, item_id }) => {
 		if (item_id && !getItem(item_id)) return fail(`no item with id ${item_id}`);
-		return run(() => createConcept({ name, definition, details_md, source, item_id }));
+		return run(() => upsertConceptByName(name, { definition, details_md, source, item_id }));
 	}
 );
 
