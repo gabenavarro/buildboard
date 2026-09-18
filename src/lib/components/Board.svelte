@@ -11,9 +11,9 @@
 	import EdgeEditor from '$lib/components/EdgeEditor.svelte';
 	import { api } from '$lib/api.js';
 	import { toast } from '$lib/toast.js';
-	import type { Item, ItemKind, BoardWithCount, Decision } from '$lib/types.js';
+	import type { Item, ItemKind, BoardWithCount, Decision, Concept } from '$lib/types.js';
 
-	type BoardNode = Node<{ item: Item; i: number; decision?: Decision | null }>;
+	type BoardNode = Node<{ item: Item; i: number; decision?: Decision | null; concept?: Concept | null }>;
 	type BoardEdge = Edge & { kind: string };
 
 	let {
@@ -125,21 +125,26 @@
 		selectedNodes = [];
 		selectedEdges = [];
 		try {
-			const [items, edgeList, boardDecisions] = await Promise.all([
+			const [items, edgeList, boardDecisions, concepts] = await Promise.all([
 				api.listItems({ board: boardId }),
 				api.listEdges().then((all) => all.filter((e) => e.board_id === boardId)),
-				api.listDecisions(undefined, boardId)
+				api.listDecisions(undefined, boardId),
+				api.listConcepts()
 			]);
 			const dmap: Record<string, Decision> = {};
 			for (const d of boardDecisions) {
 				if (d.item_id && d.status === 'active') dmap[d.item_id] = d;
 			}
 			decisionByItem = dmap;
+			const cmap: Record<string, Concept> = {};
+			for (const c of concepts) {
+				if (c.item_id) cmap[c.item_id] = c;
+			}
 			nodes = items.map((item, i) => ({
 				id: item.id,
 				type: item.kind === 'text' ? 'text' : 'item',
 				position: { x: item.x, y: item.y },
-				data: { item, i, decision: dmap[item.id] }
+				data: { item, i, decision: dmap[item.id], concept: cmap[item.id] }
 			}));
 			edges = edgeList.map((e) => {
 				const xy: BoardEdge = {

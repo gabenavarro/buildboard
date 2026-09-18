@@ -330,3 +330,43 @@ describe('REST ref endpoints', () => {
 		expect((await otherRef.json()) as unknown[]).toEqual([]);
 	});
 });
+
+describe('glossary upsert', () => {
+	it('creates a concept with a ref, then upserts by normalized name without duplicating', async () => {
+		const { upsertConceptByName, getConceptByName, listConcepts } = await import('./store.js');
+		const first = upsertConceptByName('Cache', { definition: 'memoized store' });
+		expect(first.ref).toBeTruthy();
+		expect(first.name).toBe('Cache');
+
+		// casefold + trim dedup: same normalized name updates, does not duplicate
+		const again = upsertConceptByName('  cache ', { definition: 'a fast lookup table' });
+		expect(again.id).toBe(first.id);
+		expect(again.definition).toBe('a fast lookup table');
+		expect(listConcepts()).toHaveLength(1);
+
+		expect(getConceptByName('CACHE')?.id).toBe(first.id);
+	});
+
+	it('keeps distinct names separate and defaults definition to empty', async () => {
+		const { upsertConceptByName, listConcepts } = await import('./store.js');
+		const a = upsertConceptByName('alpha', { definition: 'first' });
+		const b = upsertConceptByName('beta');
+		expect(a.id).not.toBe(b.id);
+		expect(b.definition).toBe('');
+		expect(listConcepts()).toHaveLength(2);
+	});
+});
+
+describe('POST /api/concepts/upsert', () => {
+	it('upserts by name (case-insensitive) and returns the concept', async () => {
+		const { POST: postUpsert } = await import('../routes/api/concepts/upsert/+server.js');
+		const c1 = (await (
+			await postUpsert(apiEvent({}, 'http://localhost/api/concepts/upsert', jsonBody({ name: 'Glossary Term', definition: 'one' })))
+		).json()) as { id: string; definition: string };
+		const c2 = (await (
+			await postUpsert(apiEvent({}, 'http://localhost/api/concepts/upsert', jsonBody({ name: 'glossary term', definition: 'two' })))
+		).json()) as { id: string; definition: string };
+		expect(c2.id).toBe(c1.id);
+		expect(c2.definition).toBe('two');
+	});
+});

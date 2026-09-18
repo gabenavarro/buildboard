@@ -120,6 +120,12 @@ try {
   });
   const vb = { id: vbDec.item.id, ref: vbDec.ref };
   await apiCreateItem('Visual Label', 'text', 660, 60, 'a free text label');
+  const vc = await apiCreateItem('Visual Concept', 'concept', 1100, 60);
+  await fetch(`${BASE}/api/concepts/upsert`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Visual Concept', definition: 'a defined term', details_md: 'Details for the concept.', item_id: vc.id })
+  });
   await fetch(`${BASE}/api/edges`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -284,6 +290,15 @@ try {
   await page.waitForTimeout(400);
   check('resolving marks the option chosen', (await decCard.locator('.opt-chip.chosen', { hasText: 'Option A' }).count()) === 1);
   check('resolved decision shows the choice', (await decCard.locator('.dec-state.is-resolved').count()) === 1);
+
+  // Concept (glossary) card: definition line + details preview.
+  const conceptCard = page.locator('.svelte-flow__node .card', { hasText: 'Visual Concept' }).first();
+  check('concept card renders the definition', (await conceptCard.locator('.concept-def').count()) === 1);
+  check(
+    'concept definition text matches',
+    ((await conceptCard.locator('.concept-def').first().textContent()) || '').includes('a defined term')
+  );
+  check('concept card shows details preview', (await conceptCard.locator('.preview').count()) === 1);
 
   // Theme toggle: switches to dark and updates the root.
   await page.locator('.boards button[aria-label="Toggle light/dark theme"]').click();

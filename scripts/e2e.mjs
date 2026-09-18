@@ -417,6 +417,26 @@ const pageErrors = [];
     check('decision card shows a ref chip', (await page.locator('.svelte-flow__node .card .ref-chip', { hasText: dec.ref }).count()) === 1);
   }
 
+  // --- glossary bridge (issue #86): upsert by name (case-insensitive dedup) ---
+  const gloss1 = await fetch(`${BASE}/api/concepts/upsert`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Glossary Term', definition: 'first meaning' })
+  });
+  check('POST /api/concepts/upsert returns 200', gloss1.status === 200, `status=${gloss1.status}`);
+  /** @type {{ id: string; ref?: string; definition: string }} */
+  const g1 = await gloss1.json();
+  check('upsert assigns a ref', typeof g1.ref === 'string' && g1.ref.length === 4);
+  const gloss2 = await fetch(`${BASE}/api/concepts/upsert`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'glossary term', definition: 'refined meaning' })
+  });
+  /** @type {{ id: string; definition: string }} */
+  const g2 = await gloss2.json();
+  check('upsert dedups by normalized name', g2.id === g1.id);
+  check('upsert updates the definition', g2.definition === 'refined meaning');
+
   clearTimeout(watchdog);
   if (process.exitCode === 0) console.log('\nE2E PASS');
 } catch (e) {

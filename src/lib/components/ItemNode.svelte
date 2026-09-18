@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Handle, Position } from '@xyflow/svelte';
 	import { getContext } from 'svelte';
-	import type { Item, ItemKind, ItemStatus, Decision } from '$lib/types.js';
+	import type { Item, ItemKind, ItemStatus, Decision, Concept } from '$lib/types.js';
 	import { ITEM_STATUSES } from '$lib/types.js';
 	import { api } from '$lib/api.js';
 	import { toast } from '$lib/toast.js';
@@ -9,27 +9,33 @@
 	let {
 		data,
 		selected = false
-	}: { data: { item: Item; i: number; decision?: Decision | null }; selected?: boolean } = $props();
+	}: { data: { item: Item; i: number; decision?: Decision | null; concept?: Concept | null }; selected?: boolean } =
+		$props();
 	const item = $derived(data.item);
 	const decision = $derived(data.decision ?? null);
+	const concept = $derived(data.concept ?? null);
 	const onstatus = getContext<((item: Item) => void) | undefined>('board:statuschange');
 	const ondelete = getContext<((id: string) => void) | undefined>('board:delete');
 	const ondecisionresolved = getContext<((decision: Decision, item: Item, unblocked: Item[]) => void) | undefined>(
 		'board:decisionresolved'
 	);
 
-	// One-line plain-text preview of the body markdown.
-	const preview = $derived.by(() => {
-		let t = item.body_md.replace(/```[\s\S]*?```/g, ' ');
+	// One-line plain-text preview of markdown.
+	function stripMd(md: string): string {
+		let t = md.replace(/```[\s\S]*?```/g, ' ');
 		t = t.replace(/`([^`]*)`/g, '$1');
 		t = t.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
 		t = t.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
 		t = t.replace(/^[\s>#*+-]+/gm, '');
 		t = t.replace(/\|/g, ' ');
 		t = t.replace(/[*_~]/g, '');
-		t = t.replace(/\s+/g, ' ').trim();
-		return t.slice(0, 90);
-	});
+		return t.replace(/\s+/g, ' ').trim();
+	}
+	const preview = $derived(stripMd(item.body_md).slice(0, 90));
+	const conceptDetails = $derived(concept ? stripMd(concept.details_md).slice(0, 120) : '');
+	const cardRef = $derived(
+		item.kind === 'decision' ? decision?.ref : item.kind === 'concept' ? concept?.ref : undefined
+	);
 
 	function cycleStatus(e: MouseEvent) {
 		e.stopPropagation();
@@ -44,7 +50,7 @@
 	function copyRef(e: MouseEvent) {
 		e.stopPropagation();
 		e.preventDefault();
-		const ref = decision?.ref;
+		const ref = cardRef;
 		if (!ref) return;
 		const text = `#${ref}`;
 		void navigator.clipboard
@@ -119,9 +125,9 @@
 
 	<div class="head">
 		<span class="badge">{item.kind}</span>
-		{#if item.kind === 'decision' && decision?.ref}
-			<button class="ref-chip" title="Copy ref" aria-label="Copy ref {decision.ref}" onclick={copyRef}>
-				#{decision.ref}
+		{#if cardRef}
+			<button class="ref-chip" title="Copy ref" aria-label={`Copy ref ${cardRef}`} onclick={copyRef}>
+				#{cardRef}
 			</button>
 		{/if}
 		<button
@@ -139,7 +145,14 @@
 		{/if}
 	</div>
 	<div class="title">{item.title}</div>
-	{#if preview}
+	{#if item.kind === 'concept' && concept}
+		{#if concept.definition}
+			<div class="concept-def">{concept.definition}</div>
+		{/if}
+		{#if conceptDetails}
+			<div class="preview">{conceptDetails}</div>
+		{/if}
+	{:else if preview}
 		<div class="preview">{preview}</div>
 	{/if}
 	{#if item.kind === 'decision' && decision}
@@ -262,6 +275,13 @@
 		font-size: 14px;
 		line-height: 1.3;
 		word-break: break-word;
+	}
+	.concept-def {
+		margin-top: 4px;
+		font-size: 12px;
+		font-weight: 500;
+		line-height: 1.4;
+		color: var(--text);
 	}
 	.preview {
 		margin-top: 4px;
