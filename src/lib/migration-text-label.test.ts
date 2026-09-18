@@ -19,8 +19,11 @@ afterAll(() => {
 describe('text-label migration (rebuild items CHECK)', () => {
 	it('upgrades an old-schema DB with data, keeps rows, allows kind=text, and re-syncs FTS', async () => {
 		const { MIGRATIONS, getDb } = await import('./db.js');
-		const TEXT_MIG_COUNT = 4;
-		const oldMigrations = MIGRATIONS.slice(0, -TEXT_MIG_COUNT);
+		// The text-label rebuild is a contiguous block that starts where the
+		// temporary items_text_rebuild table is created; slice before it so the
+		// seeded DB is exactly pre-text (robust to migrations added after it).
+		const textStart = MIGRATIONS.findIndex((sql) => sql.includes('items_text_rebuild'));
+		const oldMigrations = MIGRATIONS.slice(0, textStart);
 
 		// Seed a pre-text database: apply every migration except the text rebuild,
 		// under its positional name (matching migrate() naming).

@@ -29,6 +29,7 @@ export interface Item {
 	parent_id: string | null;
 	board_id: string;
 	ref?: string | null;
+	pct?: number | null;
 	created_at: string;
 	updated_at: string;
 }

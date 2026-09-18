@@ -437,6 +437,35 @@ const pageErrors = [];
   check('upsert dedups by normalized name', g2.id === g1.id);
   check('upsert updates the definition', g2.definition === 'refined meaning');
 
+  // --- task bridge (issue #88): record task + pct round-trip (100 → done) ---
+  const taskRes = await fetch(`${BASE}/api/tasks`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ what: 'ship the release', board_id: 'default' })
+  });
+  check('POST /api/tasks returns 201', taskRes.status === 201, `status=${taskRes.status}`);
+  /** @type {{ ref?: string; item?: { id: string; kind: string; title: string } }} */
+  const tk = await taskRes.json();
+  check('task is canonical-titled [tt]', tk.item?.title === '[tt] ship the release');
+  if (tk.item?.id) {
+    const mid = await (
+      await fetch(`${BASE}/api/items/${tk.item.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pct: 40 })
+      })
+    ).json();
+    check('pct round-trips', mid.pct === 40 && mid.status === 'open', `pct=${mid.pct} status=${mid.status}`);
+    const full = await (
+      await fetch(`${BASE}/api/items/${tk.item.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pct: 100 })
+      })
+    ).json();
+    check('pct=100 marks the task done', full.pct === 100 && full.status === 'done', `pct=${full.pct} status=${full.status}`);
+  }
+
   clearTimeout(watchdog);
   if (process.exitCode === 0) console.log('\nE2E PASS');
 } catch (e) {

@@ -101,6 +101,7 @@ function rowToItem(row: Record<string, unknown>): Item {
 		parent_id: (row.parent_id as string | null) ?? null,
 		board_id: (row.board_id as string) ?? 'default',
 		ref: (row.ref as string | null) ?? null,
+		pct: (row.pct as number | null) ?? null,
 		created_at: row.created_at as string,
 		updated_at: row.updated_at as string
 	};
@@ -264,6 +265,13 @@ export function updateItem(id: string, patch: Record<string, unknown>): Item | n
 	if (typeof patch.ref === 'string') {
 		if (refTakenIn(db, 'items', patch.ref)) throw new StoreError(409, `ref already in use: ${patch.ref}`);
 		fields.ref = patch.ref;
+	}
+	if (typeof patch.pct === 'number') {
+		const pct = Math.max(0, Math.min(100, Math.round(patch.pct)));
+		fields.pct = pct;
+		if (pct >= 100) fields.status = 'done';
+	} else if (patch.pct === null) {
+		fields.pct = null;
 	}
 
 	if (Object.keys(fields).length === 0) return existing;
@@ -779,6 +787,49 @@ export function recordDecision(input: RecordDecisionInput): { ref: string; item:
 		createMessage({ thread_id: thread.id, role: 'system', content: input.question });
 		db.exec('COMMIT');
 		return { ref, item, decision };
+	} catch (e) {
+		db.exec('ROLLBACK');
+		throw e;
+	}
+}
+
+export interface RecordTaskInput {
+	what: string;
+	body_md?: string;
+	ref?: string;
+	board_id?: string;
+}
+
+/**
+ * Record a unit of background work as a task item, canonical-titled `[tt] <what>`,
+ * under one short ref with a seeded thread — addressable from chat, board, and agents.
+ */
+export function recordTask(input: RecordTaskInput): { ref: string; item: Item } {
+	const db = getDb();
+	const board_id = input.board_id ?? 'default';
+	if (!getBoard(board_id)) throw new StoreError(404, `board not found: ${board_id}`);
+	let ref: string;
+	if (input.ref === undefined) {
+		ref = newUniqueRef(db);
+	} else if (refTaken(db, input.ref)) {
+		throw new StoreError(409, `ref already in use: ${input.ref}`);
+	} else {
+		ref = input.ref;
+	}
+	db.exec('BEGIN');
+	try {
+		const item = createItem({
+			kind: 'task',
+			title: `[tt] ${input.what}`,
+			body_md: input.body_md ?? '',
+			status: 'open',
+			board_id,
+			ref
+		});
+		const thread = createThread(`Work: ${input.what}`, item.id);
+		createMessage({ thread_id: thread.id, role: 'system', content: input.what });
+		db.exec('COMMIT');
+		return { ref, item };
 	} catch (e) {
 		db.exec('ROLLBACK');
 		throw e;

@@ -234,14 +234,14 @@ function finalize(
 	entry.emitter.emit('done', { status, ...extra });
 }
 
-/** Append the agent's output to the item's body so it lands on the board. */
+/** Append the agent's output to the item's body and mark the task done (100%). */
 function writeBack(item_id: string, transcript: string): void {
 	try {
 		const item = getItem(item_id);
 		if (!item) return;
 		const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
 		const section = `\n\n---\n\n## Subagent output (${stamp})\n\n${transcript}\n`;
-		updateItem(item_id, { body_md: item.body_md + section });
+		updateItem(item_id, { body_md: item.body_md + section, pct: 100, status: 'done' });
 	} catch (e) {
 		console.error('writeBack failed', e);
 	}
