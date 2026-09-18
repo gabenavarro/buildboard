@@ -50,6 +50,24 @@ async function apiCreateItem(title, kind, x, y) {
   return res.json();
 }
 
+/** @returns {Promise<Array<{ id: string; title: string }>>} */
+async function apiListItems() {
+  const res = await fetch(`${BASE}/api/items?board=default`);
+  if (!res.ok) throw new Error(`GET /api/items failed: ${res.status}`);
+  return res.json();
+}
+
+/** @param {string} fromId @param {string} toId */
+async function apiCreateEdge(fromId, toId) {
+  const res = await fetch(`${BASE}/api/edges`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ from_id: fromId, to_id: toId, kind: 'depends_on', board_id: 'default' })
+  });
+  if (!res.ok) throw new Error(`POST /api/edges failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
 /** @param {string} label @param {boolean} cond @param {string} [detail] */
 function check(label, cond, detail = '') {
   if (!cond) {
@@ -101,6 +119,26 @@ const pageErrors = [];
   check('status badge rendered', (await page.locator('.svelte-flow__node .status').count()) === 3);
   check('kind badge rendered', (await page.locator('.svelte-flow__node .badge').count()) === 3);
   check('minimap rendered', await page.locator('.svelte-flow__minimap').count() === 1);
+
+  // --- canvas handle quality (issue #74): hidden at rest, visible on hover ---
+  const restHandles = await page.evaluate(() => {
+    const hs = [...document.querySelectorAll('.svelte-flow__handle')];
+    if (!hs.length) return 'none';
+    return hs.every((h) => getComputedStyle(h).opacity === '0') ? 'hidden' : 'visible';
+  });
+  check('handles hidden at rest', restHandles === 'hidden', `got ${restHandles}`);
+
+  const alphaForHover = page.locator('.svelte-flow__node', { hasText: 'E2E Alpha' }).first();
+  await alphaForHover.hover();
+  await page.waitForTimeout(150);
+  const hoverHandles = await page.evaluate(() => {
+    const node = [...document.querySelectorAll('.svelte-flow__node')].find((n) => n.querySelector('.title')?.textContent === 'E2E Alpha');
+    if (!node) return 'no-node';
+    const hs = [...node.querySelectorAll('.svelte-flow__handle')];
+    if (!hs.length) return 'no-handles';
+    return `${hs.filter((h) => getComputedStyle(h).opacity === '1').length}/${hs.length}`;
+  });
+  check('handles visible on hover', hoverHandles === '8/8', `got ${hoverHandles}`);
 
   // Command palette (⌘K): type a known title, expect a result, select it, expect focus.
   check('command palette trigger present', (await page.locator('.cmd-trigger').count()) === 1);
@@ -167,6 +205,69 @@ const pageErrors = [];
     .waitForFunction(() => document.querySelectorAll('.svelte-flow__node .card').length === 4, null, { timeout: 10000 })
     .catch(() => {});
   check('duplicate added a node', (await page.locator('.svelte-flow__node .card').count()) === 4);
+
+  // --- arrow auto-anchors to the nearest edge (issue #74) ---
+  const itemsNow = await apiListItems();
+  const alphaId = itemsNow.find((i) => i.title === 'E2E Alpha')?.id;
+  const betaId = itemsNow.find((i) => i.title === 'E2E Beta')?.id;
+  if (alphaId && betaId) {
+    await apiCreateEdge(alphaId, betaId);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.svelte-flow', { timeout: 10000 });
+    await page
+      .waitForFunction(() => document.querySelectorAll('.svelte-flow__edge-path').length >= 1, null, { timeout: 10000 })
+      .catch(() => {});
+    await page.waitForTimeout(300);
+    const anchor = await page.evaluate(() => {
+      /** @param {HTMLElement} el */
+      function nodeFlow(el) {
+        const m = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+        return { x: m.e, y: m.f, w: el.offsetWidth, h: el.offsetHeight };
+      }
+      const nodeEls = /** @type {HTMLElement[]} */ ([...document.querySelectorAll('.svelte-flow__node')]);
+      const alpha = nodeEls.find((n) => n.querySelector('.title')?.textContent === 'E2E Alpha');
+      const beta = nodeEls.find((n) => n.querySelector('.title')?.textContent === 'E2E Beta');
+      const paths = /** @type {SVGPathElement[]} */ ([...document.querySelectorAll('.svelte-flow__edge-path')]);
+      if (!alpha || !beta || !paths.length) return null;
+      const a = nodeFlow(alpha);
+      const b = nodeFlow(beta);
+      const ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 };
+      const bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+      let best = null;
+      let bestD = Infinity;
+      for (const p of paths) {
+        const len = p.getTotalLength();
+        if (!len) continue;
+        const s = p.getPointAtLength(0);
+        const e = p.getPointAtLength(len);
+        const d = Math.hypot(s.x - ac.x, s.y - ac.y) + Math.hypot(e.x - bc.x, e.y - bc.y);
+        if (d < bestD) {
+          bestD = d;
+          best = { s, e };
+        }
+      }
+      if (!best) return null;
+      return { sStartX: best.s.x, alphaRight: a.x + a.w, eEndX: best.e.x, betaLeft: b.x };
+    });
+    if (anchor) {
+      check(
+        'edge starts at source nearest edge (right)',
+        Math.abs(anchor.sStartX - anchor.alphaRight) < 25,
+        `start x=${anchor.sStartX?.toFixed(1)} vs right=${anchor.alphaRight?.toFixed(1)}`
+      );
+      check(
+        'edge ends at target nearest edge (left)',
+        Math.abs(anchor.eEndX - anchor.betaLeft) < 25,
+        `end x=${anchor.eEndX?.toFixed(1)} vs left=${anchor.betaLeft?.toFixed(1)}`
+      );
+    } else {
+      check('edge starts at source nearest edge (right)', false, 'anchor geometry not found');
+      check('edge ends at target nearest edge (left)', false, 'anchor geometry not found');
+    }
+  } else {
+    check('edge starts at source nearest edge (right)', false, 'alpha/beta ids not found');
+    check('edge ends at target nearest edge (left)', false, 'alpha/beta ids not found');
+  }
 
   // move a unique node (Alpha now has a duplicate on this board)
   const beta = page.locator('.svelte-flow__node', { hasText: 'E2E Beta' }).first();
