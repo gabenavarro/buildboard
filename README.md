@@ -6,6 +6,7 @@ A whiteboard + decision database + subagent runner for planning build-outs toget
 - **Decision database** — SQLite storage for discussions, decisions, and concepts, designed to expose *compact* context to agents so it never overwhelms a context window.
 - **Subagents** — spawn opencode subagents from a board node to expand a concept or plan in detail; results stream back and write themselves onto the board.
 - **MCP server** — exposes the board and database to your opencode session so the agent can read/write it directly during a conversation.
+- **table-talk integration** — a chat-side CLI records decisions, glossary terms, and tasks *into* the board, so one record is reachable from chat (by short `ref`), the board, and any agent. See [docs/integration.md](docs/integration.md).
 
 ## Status
 
@@ -17,6 +18,7 @@ Under active development. Milestones:
 - [x] M3 — Subagent runner (streaming, write-back)
 - [x] M4 — MCP server + integration
 - [x] M5 — Polish (minimap, export, multi-board, tests)
+- [x] M6 — table-talk integration (ref system, decision/glossary/task bridges, live board)
 
 ## Developing
 

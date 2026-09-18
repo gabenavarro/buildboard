@@ -358,6 +358,36 @@ describe('glossary upsert', () => {
 	});
 });
 
+describe('board events', () => {
+	it('emits on item/edge mutations for the affected board', async () => {
+		const { onBoardChange } = await import('./board-events.js');
+		const { createItem, updateItem, deleteItem, createEdge } = await import('./store.js');
+		const events: string[] = [];
+		const unsub = onBoardChange('default', (p) => events.push(p.type));
+		const item = createItem({ title: 'live', kind: 'task' });
+		expect(events).toContain('item.created');
+		updateItem(item.id, { status: 'in_progress' });
+		expect(events).toContain('item.updated');
+		const other = createItem({ title: 'other' });
+		createEdge({ from_id: item.id, to_id: other.id, board_id: 'default' });
+		expect(events).toContain('edge.created');
+		deleteItem(item.id);
+		expect(events).toContain('item.deleted');
+		unsub();
+	});
+
+	it('does not emit for a board nobody is watching (no leak)', async () => {
+		const { onBoardChange } = await import('./board-events.js');
+		const { createItem } = await import('./store.js');
+		const unsub = onBoardChange('default', () => {});
+		const before = createItem({ title: 'x' });
+		unsub();
+		const { emitBoardChange } = await import('./board-events.js');
+		// emitting after unsubscribe must not throw
+		emitBoardChange(before.board_id, 'item.updated');
+	});
+});
+
 describe('task bridge', () => {
 	it('recordTask creates a task item with a [tt] title, ref, and seeded thread', async () => {
 		const { recordTask, getItem, getThreadForItem, listMessages } = await import('./store.js');

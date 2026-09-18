@@ -132,6 +132,29 @@ try {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ pct: 40 })
   });
+  // Blocked task + blocks edge to a decision, for the visual language checks.
+  const gateRes = await fetch(`${BASE}/api/decide`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ question: 'Visual Gate', options: ['go', 'hold'], board_id: 'default' })
+  });
+  const gate = await gateRes.json();
+  await fetch(`${BASE}/api/items/${gate.item.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ x: 360, y: 300 })
+  });
+  const vblocked = await apiCreateItem('Visual Blocked', 'task', 60, 520);
+  await fetch(`${BASE}/api/items/${vblocked.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'blocked' })
+  });
+  await fetch(`${BASE}/api/edges`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ from_id: vblocked.id, to_id: gate.item.id, kind: 'blocks', board_id: 'default' })
+  });
   await fetch(`${BASE}/api/edges`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -313,6 +336,18 @@ try {
     'pct chip shows 40%',
     ((await taskCard.locator('.pct-chip').first().textContent()) || '').includes('40%')
   );
+
+  // Blocks edge: dashed + amber; blocked card shows a "waiting on" footer.
+  const anyEdgePath = await page.locator('.svelte-flow__edge-path').all();
+  /** @type {string[]} */
+  const dashVals = await Promise.all(
+    anyEdgePath.map((el) => el.evaluate((n) => getComputedStyle(n).strokeDasharray))
+  );
+  const dashed = dashVals.some((v) => v && v !== 'none');
+  check('a blocks edge is dashed', dashed, 'no dashed edge found');
+  const blockedCard = page.locator('.svelte-flow__node .card', { hasText: 'Visual Blocked' }).first();
+  const waiting = (await blockedCard.locator('.blocked-by').first().textContent().catch(() => '')) || '';
+  check('blocked card shows a waiting-on footer', waiting.includes('waiting on'), waiting.slice(0, 40));
 
   // Theme toggle: switches to dark and updates the root.
   await page.locator('.boards button[aria-label="Toggle light/dark theme"]').click();
