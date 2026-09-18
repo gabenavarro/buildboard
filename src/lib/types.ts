@@ -1,7 +1,7 @@
 // Shared domain types and constants.
 // MUST stay free of node: imports — this module is imported by client code.
 
-export type ItemKind = 'note' | 'concept' | 'task' | 'plan' | 'decision' | 'agent_task';
+export type ItemKind = 'note' | 'concept' | 'task' | 'plan' | 'decision' | 'agent_task' | 'text';
 export type ItemStatus = 'open' | 'in_progress' | 'done' | 'blocked';
 export type MessageRole = 'user' | 'agent' | 'subagent' | 'system';
 export type DecisionStatus = 'active' | 'superseded';
@@ -95,7 +95,7 @@ export interface AgentTask {
 	created_at: string;
 }
 
-export const ITEM_KINDS: ItemKind[] = ['note', 'concept', 'task', 'plan', 'decision', 'agent_task'];
+export const ITEM_KINDS: ItemKind[] = ['note', 'concept', 'task', 'plan', 'decision', 'agent_task', 'text'];
 export const ITEM_STATUSES: ItemStatus[] = ['open', 'in_progress', 'done', 'blocked'];
 
 export interface SearchHit {

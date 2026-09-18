@@ -3,6 +3,7 @@
 	import { setContext } from 'svelte';
 
 	import ItemNode from '$lib/components/ItemNode.svelte';
+	import TextNode from '$lib/components/TextNode.svelte';
 	import Palette from '$lib/components/Palette.svelte';
 	import DetailPanel from '$lib/components/DetailPanel.svelte';
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
@@ -44,7 +45,10 @@
 	let justCreatedId = $state<string | null>(null);
 	let boardRef = $state<HTMLElement | null>(null);
 
-	const nodeTypes = { item: ItemNode };
+	const nodeTypes = { item: ItemNode, text: TextNode };
+
+	// Text labels report their edits back so the node data + edge anchors refresh.
+	setContext('board:itemupdated', (item: Item) => handleUpdated(item));
 
 	const { screenToFlowPosition, fitView, setZoom, setCenter, getZoom } = useSvelteFlow();
 
@@ -111,7 +115,7 @@
 			]);
 			nodes = items.map((item, i) => ({
 				id: item.id,
-				type: 'item',
+				type: item.kind === 'text' ? 'text' : 'item',
 				position: { x: item.x, y: item.y },
 				data: { item, i }
 			}));
@@ -177,7 +181,7 @@
 		});
 		nodes = [
 			...nodes,
-			{ id: item.id, type: 'item', position: { x: item.x, y: item.y }, data: { item, i: nodes.length } }
+			{ id: item.id, type: item.kind === 'text' ? 'text' : 'item', position: { x: item.x, y: item.y }, data: { item, i: nodes.length } }
 		];
 		selected = item;
 		justCreatedId = item.id;

@@ -12,7 +12,8 @@
 		{ kind: 'task', label: 'Task' },
 		{ kind: 'plan', label: 'Plan' },
 		{ kind: 'decision', label: 'Decision' },
-		{ kind: 'agent_task', label: 'Agent task' }
+		{ kind: 'agent_task', label: 'Agent task' },
+		{ kind: 'text', label: 'Text label' }
 	];
 
 	function pick(kind: ItemKind, e: MouseEvent) {

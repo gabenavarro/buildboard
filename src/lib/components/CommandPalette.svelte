@@ -34,7 +34,8 @@
 		{ kind: 'task', label: 'New task' },
 		{ kind: 'plan', label: 'New plan' },
 		{ kind: 'decision', label: 'New decision' },
-		{ kind: 'agent_task', label: 'New agent task' }
+		{ kind: 'agent_task', label: 'New agent task' },
+		{ kind: 'text', label: 'New text label' }
 	];
 
 	// Cross-board search while typing.
