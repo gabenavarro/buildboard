@@ -189,7 +189,30 @@ const pageErrors = [];
   await page.waitForTimeout(700);
   check('board deleted via modal', (await page.locator('select option').count()) === 2);
 
-
+  // Lexical body editor (final, on a dedicated board so it doesn't disturb the counts above):
+  // type + heading + save, assert the API body_md round-trips to markdown.
+  await page.locator('select').first().selectOption({ index: 0 });
+  await page.waitForTimeout(900);
+  const ed = await apiCreateItem('E2E Editor', 'note', 760, 320);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.svelte-flow', { timeout: 10000 });
+  await page
+    .waitForFunction(() => document.querySelectorAll('.svelte-flow__node .card').length === 4, null, { timeout: 15000 })
+    .catch(() => {});
+  await page.locator('.svelte-flow__node .card', { hasText: 'E2E Editor' }).click();
+  await page.waitForTimeout(700);
+  const lexRoot = page.locator('.panel .lex-root');
+  check('lexical editor rendered', (await lexRoot.count()) === 1);
+  await lexRoot.click();
+  await page.keyboard.type('Round trip body');
+  await page.waitForTimeout(300);
+  await page.locator('.panel .toolbar button', { hasText: 'H1' }).click();
+  await page.waitForTimeout(300);
+  await page.locator('.panel button', { hasText: 'Save' }).click();
+  await page.waitForTimeout(700);
+  const savedRes = await fetch(`${BASE}/api/items/${ed.id}`);
+  const saved = await savedRes.json();
+  check('body_md round-trips to markdown', (saved.body_md || '').includes('# Round trip body'), saved.body_md?.slice(0, 60));
 
   clearTimeout(watchdog);
   if (process.exitCode === 0) console.log('\nE2E PASS');

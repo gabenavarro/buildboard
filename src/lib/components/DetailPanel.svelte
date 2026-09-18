@@ -3,7 +3,7 @@
 	import type { Item, ItemKind, ItemStatus } from '$lib/types.js';
 	import ThreadTab from './ThreadTab.svelte';
 	import DecisionTab from './DecisionTab.svelte';
-	import MarkdownView from './MarkdownView.svelte';
+	import LexicalBody from './LexicalBody.svelte';
 	import ConceptTab from './ConceptTab.svelte';
 	import AgentTab from './AgentTab.svelte';
 	import { toast } from '$lib/toast.js';
@@ -42,7 +42,6 @@
 	let status = $state<ItemStatus>(item.status);
 	let tagsText = $state(item.tags.join(', '));
 	let bodyMd = $state(item.body_md);
-	let bodyView = $state<'raw' | 'rendered'>('raw');
 	let saving = $state(false);
 	let error = $state('');
 
@@ -155,22 +154,10 @@
 				<input value={tagsText} oninput={(e) => (tagsText = e.currentTarget.value)} />
 			</label>
 
-			<label class="grow">
-				<span class="body-head">
-					<span>Body (markdown)</span>
-					<span class="view-toggle">
-						<button type="button" class:active={bodyView === 'raw'} onclick={() => (bodyView = 'raw')}>Raw</button>
-						<button type="button" class:active={bodyView === 'rendered'} onclick={() => (bodyView = 'rendered')}>Rendered</button>
-					</span>
-				</span>
-				{#if bodyView === 'raw'}
-					<textarea rows={10} value={bodyMd} oninput={(e) => (bodyMd = e.currentTarget.value)}></textarea>
-				{:else}
-					<div class="body-preview">
-						<MarkdownView text={bodyMd} />
-					</div>
-				{/if}
-			</label>
+			<div class="grow">
+				<span class="body-head"><span>Body</span></span>
+				<LexicalBody value={item.body_md} onmarkdown={(md) => (bodyMd = md)} />
+			</div>
 
 			{#if error}
 				<p class="error">{error}</p>
@@ -294,38 +281,14 @@
 	}
 	.body-head {
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
-	.view-toggle {
-		display: flex;
-		gap: 4px;
-	}
-	.view-toggle button {
-		font-size: 11px;
-		padding: 2px 8px;
-		border-radius: 6px;
-		background: var(--bg);
+		font-size: 12px;
 		color: var(--text-dim);
 	}
-	.view-toggle button.active {
-		background: var(--accent-soft);
-		border-color: var(--accent);
-		color: var(--accent);
-	}
-	.body-preview {
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		background: var(--bg);
-		padding: 10px;
-		min-height: 120px;
-		overflow-y: auto;
-	}
-	textarea {
-		resize: vertical;
-		min-height: 120px;
-		font-family: ui-monospace, monospace;
-		font-size: 12px;
+	.grow {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
 	}
 	footer {
 		display: flex;
