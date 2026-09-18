@@ -101,6 +101,15 @@ export interface AgentTask {
 export const ITEM_KINDS: ItemKind[] = ['note', 'concept', 'task', 'plan', 'decision', 'agent_task', 'text'];
 export const ITEM_STATUSES: ItemStatus[] = ['open', 'in_progress', 'done', 'blocked'];
 
+export interface ResolvedRef {
+	source: 'item' | 'decision' | 'concept';
+	id: string;
+	ref: string;
+	title: string;
+	status: string | null;
+	board_id: string | null;
+}
+
 export interface SearchHit {
 	source: 'item' | 'decision' | 'concept' | 'message';
 	id: string;

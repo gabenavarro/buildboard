@@ -365,6 +365,58 @@ const pageErrors = [];
   const saved = await savedRes.json();
   check('body_md round-trips to markdown', (saved.body_md || '').includes('# Round trip body'), saved.body_md?.slice(0, 60));
 
+  // --- decision bridge (issue #84): decide -> resolve -> unblock + deep link ---
+  const decRes = await fetch(`${BASE}/api/decide`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ question: 'E2E pick a path?', options: ['Ship it', 'Wait'], why: 'scope', rec: 'Ship it', board_id: 'default' })
+  });
+  check('POST /api/decide returns 201', decRes.status === 201, `status=${decRes.status}`);
+  /** @type {{ ref?: string; item?: { id: string; kind: string }; decision?: { question: string; ref?: string } }} */
+  const dec = await decRes.json();
+  check('decide returns ref + decision item + decision', !!(dec.ref && dec.item?.kind === 'decision' && dec.decision?.question));
+  if (dec.ref && dec.item && dec.decision) {
+    const decThreads = /** @type {Array<{ id: string }>} */ (await (await fetch(`${BASE}/api/threads?item_id=${dec.item.id}`)).json());
+    const decMsgs = decThreads.length
+      ? /** @type {Array<{ role: string; content: string; meta?: string }>} */ (await (await fetch(`${BASE}/api/threads/${decThreads[0].id}/messages`)).json())
+      : [];
+    check('decision thread seeded with the question', decMsgs.some((m) => m.role === 'system' && m.content === dec.decision?.question));
+    const blockedTask = await apiCreateItem('E2E Blocked Task', 'task', 980, 320);
+    await fetch(`${BASE}/api/items/${blockedTask.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'blocked' })
+    });
+    await fetch(`${BASE}/api/edges`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ from_id: blockedTask.id, to_id: dec.item.id, kind: 'blocks', board_id: 'default' })
+    });
+    const resRes = await fetch(`${BASE}/api/decisions/${dec.ref}/resolve`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ choice: 'Ship it' })
+    });
+    check('POST resolve returns 200', resRes.status === 200, `status=${resRes.status}`);
+    /** @type {{ decision?: { choice?: string }; item?: { status: string }; unblocked?: Array<{ id: string; status: string }> }} */
+    const resBody = await resRes.json();
+    check('resolve sets the choice', resBody.decision?.choice === 'Ship it');
+    check('resolve marks the decision item done', resBody.item?.status === 'done');
+    check('resolve unblocks the blocked task', resBody.unblocked?.some((i) => i.id === blockedTask.id && i.status === 'open') === true);
+    const decMsgs2 = decThreads.length
+      ? /** @type {Array<{ meta?: string }>} */ (await (await fetch(`${BASE}/api/threads/${decThreads[0].id}/messages`)).json())
+      : [];
+    check('resolve posts an answer to the thread (meta carries ref)', decMsgs2.some((m) => (m.meta || '').includes(dec.ref || '')));
+
+    await page.goto(`${BASE}/?board=default&item=${dec.ref}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.svelte-flow', { timeout: 10000 });
+    await page
+      .waitForFunction(() => document.querySelectorAll('.svelte-flow__node .card').length >= 1, null, { timeout: 10000 })
+      .catch(() => {});
+    check('deep link lands on the decision card', (await page.locator('.svelte-flow__node .card', { hasText: 'E2E pick a path?' }).count()) === 1);
+    check('decision card shows a ref chip', (await page.locator('.svelte-flow__node .card .ref-chip', { hasText: dec.ref }).count()) === 1);
+  }
+
   clearTimeout(watchdog);
   if (process.exitCode === 0) console.log('\nE2E PASS');
 } catch (e) {

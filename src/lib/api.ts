@@ -10,7 +10,8 @@ import type {
 	Concept,
 	AgentTask,
 	Board,
-	BoardWithCount
+	BoardWithCount,
+	ResolvedRef
 } from './types.js';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -74,8 +75,13 @@ export const api = {
 	deleteMessage: (thread_id: string, mid: string) =>
 		request<{ ok: boolean }>(`/api/threads/${thread_id}/messages/${mid}`, { method: 'DELETE' }),
 
-	listDecisions: (item_id?: string) =>
-		request<Decision[]>(`/api/decisions${item_id ? `?item_id=${item_id}` : ''}`),
+	listDecisions: (item_id?: string, board?: string) => {
+		const params = new URLSearchParams();
+		if (item_id) params.set('item_id', item_id);
+		if (board) params.set('board', board);
+		const qs = params.toString() ? `?${params.toString()}` : '';
+		return request<Decision[]>(`/api/decisions${qs}`);
+	},
 	createDecision: (input: {
 		item_id?: string | null;
 		question: string;
@@ -83,6 +89,23 @@ export const api = {
 		choice?: string | null;
 		rationale?: string;
 	}) => request<Decision>('/api/decisions', { method: 'POST', body: JSON.stringify(input) }),
+	decide: (input: {
+		question: string;
+		options?: string[];
+		why?: string;
+		rec?: string;
+		ref?: string;
+		board_id?: string;
+	}) =>
+		request<{ ref: string; item: Item; decision: Decision }>('/api/decide', {
+			method: 'POST',
+			body: JSON.stringify(input)
+		}),
+	resolveDecision: (id: string, input: { choice: string; rationale?: string }) =>
+		request<{ decision: Decision; item: Item; unblocked: Item[] }>(`/api/decisions/${id}/resolve`, {
+			method: 'POST',
+			body: JSON.stringify(input)
+		}),
 	updateDecision: (id: string, patch: Partial<Decision>) =>
 		request<Decision>(`/api/decisions/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 	deleteDecision: (id: string) => request<{ ok: boolean }>(`/api/decisions/${id}`, { method: 'DELETE' }),
@@ -117,6 +140,8 @@ export const api = {
 		return request<{ query: string; count: number; hits: SearchHit[] }>(`/api/search?${params.toString()}`);
 	},
 
+	ref: (ref: string) => request<ResolvedRef>(`/api/ref/${ref}`),
+
 	listBoards: () => request<BoardWithCount[]>('/api/boards'),
 	createBoard: (name: string) =>
 		request<Board>('/api/boards', { method: 'POST', body: JSON.stringify({ name }) }),
@@ -137,5 +162,6 @@ export type {
 	AgentTask,
 	Board,
 	BoardWithCount,
+	ResolvedRef,
 	SearchHit
 };

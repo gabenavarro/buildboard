@@ -626,6 +626,19 @@ export function listDecisions(filter: { item_id?: string; status?: string; ref?:
 	return db.prepare(sql).all(...params).map((r) => rowToDecision(r as Record<string, unknown>));
 }
 
+export function listDecisionsForBoard(board_id: string): Decision[] {
+	const db = getDb();
+	const rows = db
+		.prepare(
+			`SELECT d.* FROM decisions d
+			 JOIN items i ON i.id = d.item_id
+			 WHERE i.board_id = ?
+			 ORDER BY d.created_at`
+		)
+		.all(board_id) as unknown[];
+	return rows.map((r) => rowToDecision(r as Record<string, unknown>));
+}
+
 export function getDecision(idOrRef: string): Decision | null {
 	const db = getDb();
 	let row = db.prepare('SELECT * FROM decisions WHERE id = ?').get(idOrRef);

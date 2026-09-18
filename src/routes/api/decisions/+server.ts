@@ -1,8 +1,10 @@
 import type { RequestHandler } from '@sveltejs/kit';
-import { listDecisions, createDecision } from '$lib/store.js';
+import { listDecisions, listDecisionsForBoard, createDecision } from '$lib/store.js';
 import { json, badRequest, handle, readJson } from '../_util.js';
 
 export const GET: RequestHandler = handle(async ({ url }) => {
+	const board = url.searchParams.get('board');
+	if (board) return json(listDecisionsForBoard(board));
 	const item_id = url.searchParams.get('item_id') ?? undefined;
 	const status = url.searchParams.get('status') ?? undefined;
 	const ref = url.searchParams.get('ref') ?? undefined;
