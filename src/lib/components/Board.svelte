@@ -61,6 +61,42 @@
 		return boardRef?.querySelector('.svelte-flow') ?? null;
 	}
 
+	type Side = 'top' | 'right' | 'bottom' | 'left';
+
+	// Measure a node's rendered size (falls back to card defaults).
+	function nodeSize(id: string): { w: number; h: number } {
+		const el = boardRef?.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${id}"]`);
+		if (el) return { w: el.offsetWidth || 210, h: el.offsetHeight || 100 };
+		return { w: 210, h: 100 };
+	}
+
+	// Which side of `from` faces the point `p`.
+	function sideToward(from: { x: number; y: number; w: number; h: number }, p: { x: number; y: number }): Side {
+		const dx = p.x - (from.x + from.w / 2);
+		const dy = p.y - (from.y + from.h / 2);
+		if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left';
+		return dy > 0 ? 'bottom' : 'top';
+	}
+
+	// Nearest-edge anchor handles for an edge, derived from node positions.
+	function edgeHandles(e: Edge): { sourceHandle: string; targetHandle: string } {
+		const s = nodes.find((n) => n.id === e.source);
+		const t = nodes.find((n) => n.id === e.target);
+		if (!s || !t) return { sourceHandle: 'right', targetHandle: 'left' };
+		const ss = nodeSize(s.id);
+		const ts = nodeSize(t.id);
+		const sc = { x: s.position.x, y: s.position.y, w: ss.w, h: ss.h };
+		const tc = { x: t.position.x, y: t.position.y, w: ts.w, h: ts.h };
+		return {
+			sourceHandle: sideToward(sc, { x: tc.x + tc.w / 2, y: tc.y + tc.h / 2 }),
+			targetHandle: sideToward(tc, { x: sc.x + sc.w / 2, y: sc.y + sc.h / 2 })
+		};
+	}
+
+	function refreshEdgeHandles() {
+		edges = edges.map((e) => ({ ...e, ...edgeHandles(e) }));
+	}
+
 	async function load(isFirst: boolean) {
 		const isSwitch = !isFirst;
 		loaded = false;
@@ -79,13 +115,16 @@
 				position: { x: item.x, y: item.y },
 				data: { item, i }
 			}));
-			edges = edgeList.map((e) => ({
-				id: e.id,
-				source: e.from_id,
-				target: e.to_id,
-				label: e.label || undefined,
+			edges = edgeList.map((e) => {
+				const xy: Edge = {
+					id: e.id,
+					source: e.from_id,
+					target: e.to_id,
+					label: e.label || undefined,
 					markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(120,128,140,0.6)', width: 16, height: 16 }
-			}));
+				};
+				return { ...xy, ...edgeHandles(xy) };
+			});
 		} catch (e) {
 			console.error(e);
 		}
@@ -94,7 +133,10 @@
 			await fitView({ duration: 300 }).catch(() => false);
 			switching = false;
 		}
-		requestAnimationFrame(syncZoom);
+		requestAnimationFrame(() => {
+			syncZoom();
+			refreshEdgeHandles();
+		});
 	}
 
 	let firstLoad = true;
@@ -259,7 +301,8 @@
 					source: edge.from_id,
 					target: edge.to_id,
 					label: edge.label || undefined,
-			markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(120,128,140,0.6)', width: 16, height: 16 }
+					markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(120,128,140,0.6)', width: 16, height: 16 },
+					...edgeHandles({ id: edge.id, source: edge.from_id, target: edge.to_id })
 				}
 			];
 		} catch (e) {
@@ -272,6 +315,7 @@
 		const pos = targetNode.position;
 		const node = nodes.find((n) => n.id === targetNode.id);
 		if (node) node.position = { x: pos.x, y: pos.y };
+		refreshEdgeHandles();
 		api.updateItem(targetNode.id, { x: pos.x, y: pos.y }).catch((e) => console.error(e));
 	}
 
@@ -302,6 +346,7 @@
 		const node = nodes.find((n) => n.id === item.id);
 		if (node) node.data.item = item;
 		selected = item;
+		requestAnimationFrame(refreshEdgeHandles);
 		onitemchanged?.();
 	}
 

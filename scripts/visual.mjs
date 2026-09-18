@@ -168,6 +168,18 @@ try {
   const after = await card.evaluate(shadowOf);
   check('node hover changes elevation', before !== after, 'no change');
 
+  // Handles: circular and hidden at rest (the "pixel block" cleanup, issue #74).
+  // Move the mouse off the card so the node is no longer :hover.
+  await page.mouse.move(5, 5);
+  await page.waitForTimeout(250);
+  const handle = page.locator('.svelte-flow__handle').first();
+  const handleStyle = await handle.evaluate((el) => {
+    const cs = getComputedStyle(/** @type {HTMLElement} */ (el));
+    return { radius: cs.borderRadius, opacity: cs.opacity };
+  });
+  check('handles are circular', handleStyle.radius === '50%', handleStyle.radius);
+  check('handles hidden at rest', handleStyle.opacity === '0', `opacity=${handleStyle.opacity}`);
+
   // Motion: node entrance animation is declared on cards.
   const anim = await card.evaluate((el) => getComputedStyle(el).animationName);
   check('node entrance animation declared', anim === 'bb-fade-in', anim);

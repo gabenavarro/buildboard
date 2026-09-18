@@ -69,10 +69,14 @@
 	class="card {item.status === 'done' ? 'is-done' : ''} {item.status === 'blocked' ? 'is-blocked' : ''}"
 	style="--kind: {kindColor(item.kind)}; --bb-i: {data.i}"
 >
-	<Handle type="target" position={Position.Top} />
-	<Handle type="target" position={Position.Left} />
-	<Handle type="source" position={Position.Right} />
-	<Handle type="source" position={Position.Bottom} />
+	<Handle id="top" type="source" position={Position.Top} />
+	<Handle id="top" type="target" position={Position.Top} />
+	<Handle id="right" type="source" position={Position.Right} />
+	<Handle id="right" type="target" position={Position.Right} />
+	<Handle id="bottom" type="source" position={Position.Bottom} />
+	<Handle id="bottom" type="target" position={Position.Bottom} />
+	<Handle id="left" type="source" position={Position.Left} />
+	<Handle id="left" type="target" position={Position.Left} />
 
 	<div class="head">
 		<span class="badge">{item.kind}</span>
