@@ -107,6 +107,7 @@ try {
 
   await apiCreateItem('Visual Alpha', 'note', 60, 60, 'A calm note body for preview');
   await apiCreateItem('Visual Beta', 'decision', 360, 60);
+  await apiCreateItem('Visual Label', 'text', 660, 60, 'a free text label');
 
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
@@ -179,6 +180,16 @@ try {
   });
   check('handles are circular', handleStyle.radius === '50%', handleStyle.radius);
   check('handles hidden at rest', handleStyle.opacity === '0', `opacity=${handleStyle.opacity}`);
+
+  // Free-text label (issue #76): borderless chrome — transparent background, no card shadow.
+  const textNode = page.locator('.svelte-flow__node .text').first();
+  const textChrome = await textNode.evaluate((el) => {
+    const cs = getComputedStyle(/** @type {HTMLElement} */ (el));
+    return { bg: cs.backgroundColor, shadow: cs.boxShadow };
+  });
+  check('text label renders', (await textNode.count()) === 1, `count=${await textNode.count()}`);
+  check('text label has transparent background', textChrome.bg === 'rgba(0, 0, 0, 0)', textChrome.bg);
+  check('text label has no card shadow', textChrome.shadow === 'none', textChrome.shadow.slice(0, 30));
 
   // Motion: node entrance animation is declared on cards.
   const anim = await card.evaluate((el) => getComputedStyle(el).animationName);

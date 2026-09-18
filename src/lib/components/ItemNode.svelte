@@ -49,7 +49,8 @@
 			task: 'var(--kind-task)',
 			plan: 'var(--kind-plan)',
 			decision: 'var(--kind-decision)',
-			agent_task: 'var(--kind-agent_task)'
+			agent_task: 'var(--kind-agent_task)',
+			text: 'var(--text-dim)'
 		};
 		return map[kind];
 	};

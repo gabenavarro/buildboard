@@ -194,7 +194,63 @@ export const MIGRATIONS = [
 	`CREATE INDEX IF NOT EXISTS idx_items_status ON items(status)`,
 	// Integrity guards: one active decision per (item, question); no duplicate edges
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_decisions_active ON decisions(item_id, question) WHERE status = 'active' AND item_id IS NOT NULL`,
-	`CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_unique ON edges(from_id, to_id, kind)`
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_unique ON edges(from_id, to_id, kind)`,
+	// Free-text labels: rebuild items so the kind CHECK allows 'text'.
+	// SQLite cannot alter a CHECK constraint in place, so we rebuild the
+	// table (copy -> drop -> rename). Dropping items would cascade-delete
+	// edges and null item_id on threads/decisions/concepts/agent_tasks, so
+	// those dependents are backed up before the drop and restored after.
+	// The FTS index is re-synced afterwards because rowids change on rebuild.
+	`CREATE TABLE items_text_rebuild (
+		id TEXT PRIMARY KEY,
+		kind TEXT NOT NULL DEFAULT 'note' CHECK (kind IN ('note','concept','task','plan','decision','agent_task','text')),
+		title TEXT NOT NULL,
+		body_md TEXT NOT NULL DEFAULT '',
+		x REAL NOT NULL DEFAULT 0,
+		y REAL NOT NULL DEFAULT 0,
+		w REAL,
+		h REAL,
+		status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','done','blocked')),
+		tags TEXT NOT NULL DEFAULT '[]',
+		parent_id TEXT REFERENCES items(id) ON DELETE SET NULL,
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m:%H:%SfZ','now')),
+		updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m:%H:%SfZ','now')),
+		board_id TEXT NOT NULL DEFAULT 'default'
+	);
+	INSERT INTO items_text_rebuild (id, kind, title, body_md, x, y, w, h, status, tags, parent_id, created_at, updated_at, board_id)
+		SELECT id, kind, title, body_md, x, y, w, h, status, tags, parent_id, created_at, updated_at, board_id FROM items;
+	CREATE TABLE edges_bak AS SELECT * FROM edges;
+	CREATE TABLE threads_bak AS SELECT * FROM threads;
+	CREATE TABLE decisions_bak AS SELECT * FROM decisions;
+	CREATE TABLE concepts_bak AS SELECT * FROM concepts;
+	CREATE TABLE agent_tasks_bak AS SELECT * FROM agent_tasks`,
+	`DROP TABLE items;
+	ALTER TABLE items_text_rebuild RENAME TO items;
+	CREATE INDEX idx_items_parent ON items(parent_id);
+	CREATE INDEX idx_items_board ON items(board_id);
+	CREATE INDEX idx_items_kind ON items(kind);
+	CREATE INDEX idx_items_status ON items(status);
+	CREATE TRIGGER items_fts_ai AFTER INSERT ON items BEGIN
+		INSERT INTO fts_items(rowid, title, body_md) VALUES (new.rowid, new.title, new.body_md);
+	END;
+	CREATE TRIGGER items_fts_ad AFTER DELETE ON items BEGIN
+		INSERT INTO fts_items(fts_items, rowid, title, body_md) VALUES ('delete', old.rowid, old.title, old.body_md);
+	END;
+	CREATE TRIGGER items_fts_au AFTER UPDATE ON items BEGIN
+		INSERT INTO fts_items(fts_items, rowid, title, body_md) VALUES ('delete', old.rowid, old.title, old.body_md);
+		INSERT INTO fts_items(rowid, title, body_md) VALUES (new.rowid, new.title, new.body_md);
+	END`,
+	`INSERT INTO edges SELECT * FROM edges_bak;
+	INSERT INTO threads SELECT * FROM threads_bak;
+	INSERT INTO decisions SELECT * FROM decisions_bak;
+	INSERT INTO concepts SELECT * FROM concepts_bak;
+	INSERT INTO agent_tasks SELECT * FROM agent_tasks_bak;
+	DROP TABLE edges_bak;
+	DROP TABLE threads_bak;
+	DROP TABLE decisions_bak;
+	DROP TABLE concepts_bak;
+	DROP TABLE agent_tasks_bak;
+	INSERT INTO fts_items(fts_items) VALUES('rebuild')`
 ];
 
 const MIGRATION_NAMES = MIGRATIONS.map((_, i) => `m${String(i).padStart(3, '0')}`);

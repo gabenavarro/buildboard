@@ -269,6 +269,19 @@ const pageErrors = [];
     check('edge ends at target nearest edge (left)', false, 'alpha/beta ids not found');
   }
 
+  // --- free-text label (issue #76): renders borderless, not counted as a card ---
+  await apiCreateItem('E2E Label', 'text', 820, 40);
+  const cardCountBefore = await page.locator('.svelte-flow__node .card').count();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.svelte-flow', { timeout: 10000 });
+  await page
+    .waitForFunction(() => document.querySelectorAll('.svelte-flow__node .text').length >= 1, null, { timeout: 10000 })
+    .catch(() => {});
+  const textCount = await page.locator('.svelte-flow__node .text').count();
+  check('text label renders as a text node', textCount === 1, `got ${textCount}`);
+  const cardCountAfter = await page.locator('.svelte-flow__node .card').count();
+  check('text label is not counted as a card', cardCountAfter === cardCountBefore, `before=${cardCountBefore} after=${cardCountAfter}`);
+
   // move a unique node (Alpha now has a duplicate on this board)
   const beta = page.locator('.svelte-flow__node', { hasText: 'E2E Beta' }).first();
   await beta.dispatchEvent('contextmenu', { button: 2 });
