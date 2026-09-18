@@ -105,9 +105,14 @@ try {
 
   await waitForServer();
 
-  await apiCreateItem('Visual Alpha', 'note', 60, 60, 'A calm note body for preview');
-  await apiCreateItem('Visual Beta', 'decision', 360, 60);
+  const va = await apiCreateItem('Visual Alpha', 'note', 60, 60, 'A calm note body for preview');
+  const vb = await apiCreateItem('Visual Beta', 'decision', 360, 60);
   await apiCreateItem('Visual Label', 'text', 660, 60, 'a free text label');
+  await fetch(`${BASE}/api/edges`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ from_id: va.id, to_id: vb.id, kind: 'depends_on', board_id: 'default' })
+  });
 
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
@@ -190,6 +195,19 @@ try {
   check('text label renders', (await textNode.count()) === 1, `count=${await textNode.count()}`);
   check('text label has transparent background', textChrome.bg === 'rgba(0, 0, 0, 0)', textChrome.bg);
   check('text label has no card shadow', textChrome.shadow === 'none', textChrome.shadow.slice(0, 30));
+
+  // Phase 3 affordances (issue #78): delete button on selected card + edge editor.
+  const alphaCard = page.locator('.svelte-flow__node .card', { hasText: 'Visual Alpha' }).first();
+  await alphaCard.click();
+  await page.waitForTimeout(200);
+  const delVisible = await page.locator('.svelte-flow__node .card .del').count();
+  check('delete button appears on selected card', delVisible >= 1, `count=${delVisible}`);
+
+  const edgePath = page.locator('.svelte-flow__edge-path').first();
+  await edgePath.click({ force: true });
+  await page.waitForTimeout(200);
+  const edgeEditor = page.locator('.edge-editor');
+  check('edge editor opens on edge select', (await edgeEditor.count()) === 1, `count=${await edgeEditor.count()}`);
 
   // Motion: node entrance animation is declared on cards.
   const anim = await card.evaluate((el) => getComputedStyle(el).animationName);

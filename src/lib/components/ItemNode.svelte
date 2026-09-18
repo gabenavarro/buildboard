@@ -5,9 +5,10 @@
 	import { ITEM_STATUSES } from '$lib/types.js';
 	import { api } from '$lib/api.js';
 
-	let { data }: { data: { item: Item; i: number } } = $props();
+	let { data, selected = false }: { data: { item: Item; i: number }; selected?: boolean } = $props();
 	const item = $derived(data.item);
 	const onstatus = getContext<((item: Item) => void) | undefined>('board:statuschange');
+	const ondelete = getContext<((id: string) => void) | undefined>('board:delete');
 
 	// One-line plain-text preview of the body markdown.
 	const preview = $derived.by(() => {
@@ -89,6 +90,11 @@
 		>
 			{statusIcon(item.status)}
 		</button>
+		{#if selected}
+			<button class="del" title="Delete" aria-label="Delete item" onclick={(e) => { e.stopPropagation(); ondelete?.(item.id); }}>
+				✕
+			</button>
+		{/if}
 	</div>
 	<div class="title">{item.title}</div>
 	{#if preview}
@@ -133,11 +139,12 @@
 	}
 	.head {
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
+		gap: 4px;
 		margin-bottom: 6px;
 	}
 	.badge {
+		margin-right: auto;
 		font-size: 11px;
 		font-weight: 500;
 		color: color-mix(in srgb, var(--kind) 75%, var(--text));
@@ -161,6 +168,25 @@
 	.status:hover {
 		background: var(--accent-soft);
 		border-color: var(--accent);
+	}
+	.del {
+		display: grid;
+		place-items: center;
+		min-width: 22px;
+		height: 22px;
+		background: transparent;
+		border: 1px solid var(--border-soft);
+		border-radius: 999px;
+		padding: 0;
+		font-size: 11px;
+		line-height: 1;
+		color: var(--text-dim);
+		transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+	}
+	.del:hover {
+		background: var(--accent-soft);
+		border-color: var(--accent);
+		color: var(--text);
 	}
 	.title {
 		font-weight: 600;
