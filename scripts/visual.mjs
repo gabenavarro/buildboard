@@ -106,7 +106,19 @@ try {
   await waitForServer();
 
   const va = await apiCreateItem('Visual Alpha', 'note', 60, 60, 'A calm note body for preview');
-  const vb = await apiCreateItem('Visual Beta', 'decision', 360, 60);
+  const decRes = await fetch(`${BASE}/api/decide`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ question: 'Visual Beta', options: ['Option A', 'Option B'], board_id: 'default' })
+  });
+  /** @type {{ ref: string; item: { id: string } }} */
+  const vbDec = await decRes.json();
+  await fetch(`${BASE}/api/items/${vbDec.item.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ x: 360, y: 60 })
+  });
+  const vb = { id: vbDec.item.id, ref: vbDec.ref };
   await apiCreateItem('Visual Label', 'text', 660, 60, 'a free text label');
   await fetch(`${BASE}/api/edges`, {
     method: 'POST',
@@ -156,8 +168,9 @@ try {
   const ratio = await contrastRatio(page, '.brand', 'body');
   check('topbar text contrast >= 4.5:1', ratio >= 4.5, `ratio=${ratio.toFixed(2)}`);
 
-  // Node card: solid raised surface with a shadow.
-  const card = page.locator('.svelte-flow__node .card').first();
+  // Node card: solid raised surface with a shadow. Target the note card by
+  // title so the check is deterministic regardless of DOM/fitView ordering.
+  const card = page.locator('.svelte-flow__node .card', { hasText: 'Visual Alpha' }).first();
   const shadow = await card.evaluate((el) => getComputedStyle(el).boxShadow);
   check('node card has shadow', shadow !== 'none', shadow.slice(0, 40));
 
@@ -261,6 +274,16 @@ try {
   await page.waitForTimeout(400);
   const bodyText = await page.locator('.panel .lex-root').textContent();
   check('editor accepts input', (bodyText || '').includes('Visual body'), bodyText?.slice(0, 30));
+
+  // Decision card: ref chip + option chips; resolving updates the card in place.
+  const decCard = page.locator('.svelte-flow__node .card', { hasText: 'Visual Beta' }).first();
+  check('decision card shows a ref chip', (await decCard.locator('.ref-chip').count()) === 1);
+  check('decision card shows option chips', (await decCard.locator('.opt-chip').count()) === 2);
+  check('decision starts unresolved', (await decCard.locator('.dec-state.is-open').count()) === 1);
+  await decCard.locator('.opt-chip', { hasText: 'Option A' }).click();
+  await page.waitForTimeout(400);
+  check('resolving marks the option chosen', (await decCard.locator('.opt-chip.chosen', { hasText: 'Option A' }).count()) === 1);
+  check('resolved decision shows the choice', (await decCard.locator('.dec-state.is-resolved').count()) === 1);
 
   // Theme toggle: switches to dark and updates the root.
   await page.locator('.boards button[aria-label="Toggle light/dark theme"]').click();

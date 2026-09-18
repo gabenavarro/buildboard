@@ -11,9 +11,9 @@
 	import EdgeEditor from '$lib/components/EdgeEditor.svelte';
 	import { api } from '$lib/api.js';
 	import { toast } from '$lib/toast.js';
-	import type { Item, ItemKind, BoardWithCount } from '$lib/types.js';
+	import type { Item, ItemKind, BoardWithCount, Decision } from '$lib/types.js';
 
-	type BoardNode = Node<{ item: Item; i: number }>;
+	type BoardNode = Node<{ item: Item; i: number; decision?: Decision | null }>;
 	type BoardEdge = Edge & { kind: string };
 
 	let {
@@ -40,6 +40,7 @@
 
 	let nodes = $state<BoardNode[]>([]);
 	let edges = $state<BoardEdge[]>([]);
+	let decisionByItem = $state<Record<string, Decision>>({});
 	let selected = $state<Item | null>(null);
 	let selectedNodes = $state<BoardNode[]>([]);
 	let selectedEdges = $state<Edge[]>([]);
@@ -64,6 +65,11 @@
 
 	// Nodes delete themselves via the header X (Svelte context bridge).
 	setContext('board:delete', (id: string) => void handleDeleted(id));
+
+	// Decision cards report a resolution so the decision map + item statuses refresh.
+	setContext('board:decisionresolved', (decision: Decision, item: Item, unblocked: Item[]) =>
+		handleDecisionResolved(decision, item, unblocked)
+	);
 
 	function syncZoom() {
 		zoomPct = Math.round(getZoom() * 100);
@@ -119,15 +125,21 @@
 		selectedNodes = [];
 		selectedEdges = [];
 		try {
-			const [items, edgeList] = await Promise.all([
+			const [items, edgeList, boardDecisions] = await Promise.all([
 				api.listItems({ board: boardId }),
-				api.listEdges().then((all) => all.filter((e) => e.board_id === boardId))
+				api.listEdges().then((all) => all.filter((e) => e.board_id === boardId)),
+				api.listDecisions(undefined, boardId)
 			]);
+			const dmap: Record<string, Decision> = {};
+			for (const d of boardDecisions) {
+				if (d.item_id && d.status === 'active') dmap[d.item_id] = d;
+			}
+			decisionByItem = dmap;
 			nodes = items.map((item, i) => ({
 				id: item.id,
 				type: item.kind === 'text' ? 'text' : 'item',
 				position: { x: item.x, y: item.y },
-				data: { item, i }
+				data: { item, i, decision: dmap[item.id] }
 			}));
 			edges = edgeList.map((e) => {
 				const xy: BoardEdge = {
@@ -377,6 +389,17 @@
 		const node = nodes.find((n) => n.id === item.id);
 		if (node) node.data.item = item;
 		selected = item;
+		requestAnimationFrame(refreshEdgeHandles);
+		onitemchanged?.();
+	}
+
+	function handleDecisionResolved(decision: Decision, item: Item, unblocked: Item[]) {
+		if (decision.item_id) decisionByItem[decision.item_id] = decision;
+		for (const it of [item, ...unblocked]) {
+			const node = nodes.find((n) => n.id === it.id);
+			if (node) node.data.item = it;
+		}
+		if (selected?.id === item.id) selected = item;
 		requestAnimationFrame(refreshEdgeHandles);
 		onitemchanged?.();
 	}

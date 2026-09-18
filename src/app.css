@@ -23,6 +23,10 @@
 	--kind-decision: #d97316;
 	--kind-agent_task: #d0437c;
 	--danger: #d93a3a;
+	/* decision states */
+	--decision-open: var(--kind-decision);
+	--decision-resolved: var(--kind-plan);
+	--decision-superseded: var(--text-dim);
 	/* elevation — flat, minimal */
 	--shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
 	--shadow-2: 0 2px 8px rgba(16, 24, 40, 0.1);

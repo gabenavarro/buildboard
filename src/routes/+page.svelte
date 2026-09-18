@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import { SvelteFlowProvider } from '@xyflow/svelte';
 
 	import Board from '$lib/components/Board.svelte';
@@ -36,8 +37,25 @@
 	onMount(async () => {
 		try {
 			boards = await api.listBoards();
+			const sp = $page.url.searchParams;
+			const boardParam = sp.get('board');
 			const stored = localStorage.getItem(BOARD_KEY);
-			currentBoardId = stored && boards.some((b) => b.id === stored) ? stored : 'default';
+			currentBoardId =
+				boardParam && boards.some((b) => b.id === boardParam)
+					? boardParam
+					: stored && boards.some((b) => b.id === stored)
+						? stored
+						: 'default';
+			const itemParam = sp.get('item');
+			if (itemParam) {
+				const resolved = await api.ref(itemParam).catch(() => null);
+				if (resolved) {
+					if (resolved.board_id) currentBoardId = resolved.board_id;
+					focusItem = resolved.id;
+				} else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(itemParam)) {
+					focusItem = itemParam;
+				}
+			}
 		} catch (e) {
 			console.error(e);
 		}

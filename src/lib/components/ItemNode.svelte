@@ -1,14 +1,22 @@
 <script lang="ts">
 	import { Handle, Position } from '@xyflow/svelte';
 	import { getContext } from 'svelte';
-	import type { Item, ItemKind, ItemStatus } from '$lib/types.js';
+	import type { Item, ItemKind, ItemStatus, Decision } from '$lib/types.js';
 	import { ITEM_STATUSES } from '$lib/types.js';
 	import { api } from '$lib/api.js';
+	import { toast } from '$lib/toast.js';
 
-	let { data, selected = false }: { data: { item: Item; i: number }; selected?: boolean } = $props();
+	let {
+		data,
+		selected = false
+	}: { data: { item: Item; i: number; decision?: Decision | null }; selected?: boolean } = $props();
 	const item = $derived(data.item);
+	const decision = $derived(data.decision ?? null);
 	const onstatus = getContext<((item: Item) => void) | undefined>('board:statuschange');
 	const ondelete = getContext<((id: string) => void) | undefined>('board:delete');
+	const ondecisionresolved = getContext<((decision: Decision, item: Item, unblocked: Item[]) => void) | undefined>(
+		'board:decisionresolved'
+	);
 
 	// One-line plain-text preview of the body markdown.
 	const preview = $derived.by(() => {
@@ -31,6 +39,35 @@
 			.updateItem(item.id, { status: next })
 			.then((updated) => onstatus?.(updated))
 			.catch((err) => console.error(err));
+	}
+
+	function copyRef(e: MouseEvent) {
+		e.stopPropagation();
+		e.preventDefault();
+		const ref = decision?.ref;
+		if (!ref) return;
+		const text = `#${ref}`;
+		void navigator.clipboard
+			?.writeText(text)
+			.then(
+				() => toast('success', `Copied ${text}`),
+				() => toast('error', 'copy failed')
+			);
+	}
+
+	async function chooseOption(opt: string) {
+		if (!decision || decision.choice) return;
+		const prev = decision;
+		data.decision = { ...decision, choice: opt };
+		try {
+			const res = await api.resolveDecision(decision.id, { choice: opt });
+			data.decision = res.decision;
+			ondecisionresolved?.(res.decision, res.item, res.unblocked);
+			toast('success', `Resolved: ${opt}`);
+		} catch (err) {
+			data.decision = prev;
+			toast('error', err instanceof Error ? err.message : 'resolve failed');
+		}
 	}
 
 	function statusClass(status: ItemStatus): string {
@@ -82,6 +119,11 @@
 
 	<div class="head">
 		<span class="badge">{item.kind}</span>
+		{#if item.kind === 'decision' && decision?.ref}
+			<button class="ref-chip" title="Copy ref" aria-label="Copy ref {decision.ref}" onclick={copyRef}>
+				#{decision.ref}
+			</button>
+		{/if}
 		<button
 			class="status {statusClass(item.status)}"
 			title={item.status}
@@ -99,6 +141,33 @@
 	<div class="title">{item.title}</div>
 	{#if preview}
 		<div class="preview">{preview}</div>
+	{/if}
+	{#if item.kind === 'decision' && decision}
+		<div class="dec-state {decision.choice ? 'is-resolved' : 'is-open'}">
+			{#if decision.choice}
+				<span class="dec-glyph">✓</span>
+				<span class="dec-choice">{decision.choice}</span>
+			{:else}
+				<span class="dec-glyph">○</span>
+				<span class="dec-choice">unresolved</span>
+			{/if}
+		</div>
+		{#if decision.options.length > 0}
+			<div class="opts {decision.choice ? 'is-resolved' : ''}">
+				{#each decision.options as opt (opt)}
+					<button
+						class="opt-chip {decision.choice === opt ? 'chosen' : ''}"
+						onclick={(e) => {
+							e.stopPropagation();
+							e.preventDefault();
+							chooseOption(opt);
+						}}
+					>
+						{opt}
+					</button>
+				{/each}
+			</div>
+		{/if}
 	{/if}
 	{#if item.tags.length > 0}
 		<div class="tags">
@@ -215,5 +284,82 @@
 		background: var(--bg-raise-2);
 		border-radius: 4px;
 		padding: 1px 5px;
+	}
+	.status.st-open {
+		color: var(--text-dim);
+	}
+	.status.st-progress {
+		color: var(--kind-task);
+	}
+	.status.st-done {
+		color: var(--kind-plan);
+	}
+	.status.st-blocked {
+		color: var(--danger);
+		border-color: var(--danger);
+	}
+	.ref-chip {
+		margin-left: 2px;
+		font-family: var(--mono, ui-monospace, monospace);
+		font-size: 10px;
+		color: var(--kind-decision);
+		background: color-mix(in srgb, var(--kind-decision) 12%, transparent);
+		border: 1px solid color-mix(in srgb, var(--kind-decision) 30%, transparent);
+		border-radius: 4px;
+		padding: 1px 5px;
+		cursor: pointer;
+	}
+	.ref-chip:hover {
+		background: color-mix(in srgb, var(--kind-decision) 22%, transparent);
+	}
+	.dec-state {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		margin-top: 6px;
+		font-size: 11px;
+	}
+	.dec-state.is-open .dec-glyph,
+	.dec-state.is-open .dec-choice {
+		color: var(--decision-open);
+	}
+	.dec-state.is-resolved .dec-glyph,
+	.dec-state.is-resolved .dec-choice {
+		color: var(--decision-resolved);
+	}
+	.dec-glyph {
+		font-size: 12px;
+	}
+	.opts {
+		margin-top: 6px;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+	.opt-chip {
+		font-size: 11px;
+		color: var(--text);
+		background: var(--bg-raise-2);
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		padding: 2px 8px;
+		cursor: pointer;
+		transition:
+			border-color var(--t-fast) var(--ease-out),
+			background var(--t-fast) var(--ease-out);
+	}
+	.opt-chip:hover {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+	}
+	.opts.is-resolved .opt-chip {
+		cursor: default;
+		opacity: 0.55;
+	}
+	.opts.is-resolved .opt-chip.chosen {
+		opacity: 1;
+		color: var(--decision-resolved);
+		border-color: var(--decision-resolved);
+		background: color-mix(in srgb, var(--decision-resolved) 14%, transparent);
 	}
 </style>
