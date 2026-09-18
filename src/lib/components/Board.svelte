@@ -7,11 +7,14 @@
 	import Palette from '$lib/components/Palette.svelte';
 	import DetailPanel from '$lib/components/DetailPanel.svelte';
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
+	import PaneMenu from '$lib/components/PaneMenu.svelte';
+	import EdgeEditor from '$lib/components/EdgeEditor.svelte';
 	import { api } from '$lib/api.js';
 	import { toast } from '$lib/toast.js';
 	import type { Item, ItemKind, BoardWithCount } from '$lib/types.js';
 
 	type BoardNode = Node<{ item: Item; i: number }>;
+	type BoardEdge = Edge & { kind: string };
 
 	let {
 		boardId,
@@ -36,7 +39,7 @@
 	});
 
 	let nodes = $state<BoardNode[]>([]);
-	let edges = $state<Edge[]>([]);
+	let edges = $state<BoardEdge[]>([]);
 	let selected = $state<Item | null>(null);
 	let selectedNodes = $state<BoardNode[]>([]);
 	let selectedEdges = $state<Edge[]>([]);
@@ -54,6 +57,13 @@
 
 	let zoomPct = $state(100);
 	let ctxMenu = $state<{ x: number; y: number; item: Item } | null>(null);
+	let paneMenu = $state<{ x: number; y: number } | null>(null);
+	let edgeEditorOpen = $state(false);
+
+	const selectedEdge = $derived(selectedEdges.length === 1 ? selectedEdges[0] : null);
+
+	// Nodes delete themselves via the header X (Svelte context bridge).
+	setContext('board:delete', (id: string) => void handleDeleted(id));
 
 	function syncZoom() {
 		zoomPct = Math.round(getZoom() * 100);
@@ -83,7 +93,7 @@
 	}
 
 	// Nearest-edge anchor handles for an edge, derived from node positions.
-	function edgeHandles(e: Edge): { sourceHandle: string; targetHandle: string } {
+	function edgeHandles(e: { source: string; target: string }): { sourceHandle: string; targetHandle: string } {
 		const s = nodes.find((n) => n.id === e.source);
 		const t = nodes.find((n) => n.id === e.target);
 		if (!s || !t) return { sourceHandle: 'right', targetHandle: 'left' };
@@ -120,10 +130,11 @@
 				data: { item, i }
 			}));
 			edges = edgeList.map((e) => {
-				const xy: Edge = {
+				const xy: BoardEdge = {
 					id: e.id,
 					source: e.from_id,
 					target: e.to_id,
+					kind: e.kind,
 					label: e.label || undefined,
 					markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(120,128,140,0.6)', width: 16, height: 16 }
 				};
@@ -206,12 +217,17 @@
 	function handleNodeContextMenu(e: MouseEvent) {
 		const target = e.target as HTMLElement | null;
 		const nodeEl = target?.closest?.('.svelte-flow__node');
-		if (!nodeEl) return;
+		if (nodeEl) {
+			e.preventDefault();
+			const id = nodeEl.getAttribute('data-id');
+			const item = id ? findItem(id) : null;
+			if (item) ctxMenu = { x: e.clientX, y: e.clientY, item };
+			return;
+		}
+		// Right-click on the empty canvas: offer to add an item here.
+		if (target?.closest?.('.svelte-flow__minimap') || target?.closest?.('.svelte-flow__controls')) return;
 		e.preventDefault();
-		const id = nodeEl.getAttribute('data-id');
-		const item = id ? findItem(id) : null;
-		if (!item) return;
-		ctxMenu = { x: e.clientX, y: e.clientY, item };
+		paneMenu = { x: e.clientX, y: e.clientY };
 	}
 
 	async function handleMoveNode(item: Item, targetBoardId: string) {
@@ -304,11 +320,21 @@
 					id: edge.id,
 					source: edge.from_id,
 					target: edge.to_id,
+					kind: edge.kind,
 					label: edge.label || undefined,
 					markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(120,128,140,0.6)', width: 16, height: 16 },
-					...edgeHandles({ id: edge.id, source: edge.from_id, target: edge.to_id })
+					...edgeHandles({ source: edge.from_id, target: edge.to_id })
 				}
 			];
+		} catch (e) {
+			console.error(e);
+		}
+	}
+
+	async function handleEdgeSave(id: string, label: string, kind: string) {
+		try {
+			const updated = await api.updateEdge(id, { label, kind });
+			edges = edges.map((e) => (e.id === id ? { ...e, label: updated.label || undefined } : e));
 		} catch (e) {
 			console.error(e);
 		}
@@ -336,10 +362,11 @@
 		if (sel && removedNodes.some((n) => n.id === sel.id)) selected = null;
 	}
 
-	function handleSelectionChange({ nodes: selNodes, edges: selEdges }: { nodes: BoardNode[]; edges: Edge[] }) {
+	function handleSelectionChange({ nodes: selNodes, edges: selEdges }: { nodes: BoardNode[]; edges: BoardEdge[] }) {
 		selectedNodes = selNodes;
 		selectedEdges = selEdges;
 		selected = selNodes.length > 0 ? findItem(selNodes[0].id) : null;
+		edgeEditorOpen = selEdges.length === 1;
 	}
 
 	function handlePaneClick() {
@@ -436,6 +463,10 @@
 		<div class="actions">
 			<button onclick={exportMarkdown} title="Export board to markdown">Export .md</button>
 		</div>
+
+		{#if selectedEdge && edgeEditorOpen && loaded}
+			<EdgeEditor edge={selectedEdge} onsave={handleEdgeSave} onclose={() => (edgeEditorOpen = false)} />
+		{/if}
 	</div>
 
 	{#if ctxMenu}
@@ -449,6 +480,11 @@
 			onmove={(it, b) => void handleMoveNode(it, b)}
 			onduplicate={(it, b) => void handleDuplicateNode(it, b)}
 		/>
+	{/if}
+
+	{#if paneMenu}
+		{@const pm = paneMenu}
+		<PaneMenu x={pm.x} y={pm.y} oncreate={(kind, client) => void handleCreate(kind, client)} onclose={() => (paneMenu = null)} />
 	{/if}
 
 	{#if selected}

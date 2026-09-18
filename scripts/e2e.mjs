@@ -282,6 +282,43 @@ const pageErrors = [];
   const cardCountAfter = await page.locator('.svelte-flow__node .card').count();
   check('text label is not counted as a card', cardCountAfter === cardCountBefore, `before=${cardCountBefore} after=${cardCountAfter}`);
 
+  // --- Phase 3 affordances (issue #78) ---
+  // Pane context menu creates an item at the cursor.
+  const cardsBeforePane = await page.locator('.svelte-flow__node .card').count();
+  await page.mouse.click(700, 520, { button: 'right' });
+  const paneMenu = page.locator('.menu', { hasText: 'New item here' });
+  await paneMenu.waitFor({ timeout: 5000 }).catch(() => {});
+  check('pane context menu opens on empty canvas', (await paneMenu.count()) === 1);
+  await paneMenu.locator('button', { hasText: 'Task' }).first().click();
+  await page
+    .waitForFunction((n) => document.querySelectorAll('.svelte-flow__node .card').length === n, cardsBeforePane + 1, { timeout: 5000 })
+    .catch(() => {});
+  check('pane menu created a card', (await page.locator('.svelte-flow__node .card').count()) === cardsBeforePane + 1);
+
+  // Edge label editor: click an edge, set a label, verify it persists.
+  const edgePath = page.locator('.svelte-flow__edge-path').first();
+  await edgePath.click({ force: true });
+  await page.waitForTimeout(200);
+  const edgeEditor = page.locator('.edge-editor');
+  check('edge editor opens on edge select', (await edgeEditor.count()) === 1);
+  await edgeEditor.locator('input').fill('needs-ux');
+  await edgeEditor.locator('button', { hasText: 'Save' }).click();
+  await page.waitForTimeout(400);
+  const allEdges = /** @type {Array<{ label?: string }>} */ (await (await fetch(`${BASE}/api/edges`)).json());
+  check('edge label persists', allEdges.some((e) => e.label === 'needs-ux'), JSON.stringify(allEdges.map((e) => e.label)));
+
+  // Delete button: select a card, click the X, verify it is removed.
+  const cardsBeforeDelete = await page.locator('.svelte-flow__node .card').count();
+  await page.locator('.svelte-flow__node .card', { hasText: 'New task' }).first().click();
+  await page.waitForTimeout(150);
+  const delBtn = page.locator('.svelte-flow__node .card .del').first();
+  check('delete button appears on selected card', (await delBtn.count()) >= 1);
+  await delBtn.click();
+  await page
+    .waitForFunction((n) => document.querySelectorAll('.svelte-flow__node .card').length === n, cardsBeforeDelete - 1, { timeout: 5000 })
+    .catch(() => {});
+  check('delete button removes the card', (await page.locator('.svelte-flow__node .card').count()) === cardsBeforeDelete - 1);
+
   // move a unique node (Alpha now has a duplicate on this board)
   const beta = page.locator('.svelte-flow__node', { hasText: 'E2E Beta' }).first();
   await beta.dispatchEvent('contextmenu', { button: 2 });
