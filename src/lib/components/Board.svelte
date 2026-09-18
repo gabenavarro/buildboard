@@ -136,7 +136,7 @@
 					target: e.to_id,
 					kind: e.kind,
 					label: e.label || undefined,
-					markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(120,128,140,0.6)', width: 16, height: 16 }
+					markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--edge-arrow)', width: 16, height: 16 }
 				};
 				return { ...xy, ...edgeHandles(xy) };
 			});
@@ -322,7 +322,7 @@
 					target: edge.to_id,
 					kind: edge.kind,
 					label: edge.label || undefined,
-					markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(120,128,140,0.6)', width: 16, height: 16 },
+					markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--edge-arrow)', width: 16, height: 16 },
 					...edgeHandles({ source: edge.from_id, target: edge.to_id })
 				}
 			];
